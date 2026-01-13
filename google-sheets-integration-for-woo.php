@@ -18,6 +18,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+define('GS_WC_VERSION', '2.0.5');
+
 class WPMethods_WC_To_Google_Sheets {
     
     private $available_fields = array();
@@ -55,57 +57,74 @@ class WPMethods_WC_To_Google_Sheets {
             'order_id' => array(
                 'label' => 'Order ID',
                 'required' => true,
-                'always_include' => true
+                'always_include' => true,
+                'icon' => 'dashicons dashicons-cart'
             ),
             'billing_name' => array(
                 'label' => 'Billing Name',
                 'required' => true,
-                'always_include' => true
+                'always_include' => true,
+                'icon' => 'dashicons dashicons-admin-users'
             ),
             'billing_email' => array(
                 'label' => 'Email Address',
                 'required' => false,
-                'always_include' => false
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-email'
             ),
             'billing_phone' => array(
                 'label' => 'Phone',
                 'required' => false,
-                'always_include' => false
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-phone'
             ),
             'billing_address' => array(
                 'label' => 'Billing Address',
                 'required' => false,
-                'always_include' => false
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-location'
             ),
             'product_name' => array(
                 'label' => 'Product Name',
                 'required' => true,
-                'always_include' => true
+                'always_include' => true,
+                'icon' => 'dashicons dashicons-products'
             ),
             'order_amount_with_currency' => array(
                 'label' => 'Order Amount',
                 'required' => true,
-                'always_include' => true
+                'always_include' => true,
+                'icon' => 'dashicons dashicons-money'
             ),
             'order_currency' => array(
                 'label' => 'Order Currency',
                 'required' => false,
-                'always_include' => false
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-tag'
+            ),
+            'payment_method_title' => array(
+                'label' => 'Payment Method',
+                'required' => false,
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-bank'
             ),
             'order_status' => array(
                 'label' => 'Order Status',
                 'required' => true,
-                'always_include' => true
+                'always_include' => true,
+                'icon' => 'dashicons dashicons-yes'
             ),
             'order_date' => array(
                 'label' => 'Order Date',
                 'required' => true,
-                'always_include' => true
+                'always_include' => true,
+                'icon' => 'dashicons dashicons-calendar'
             ),
             'product_categories' => array(
                 'label' => 'Product Categories',
                 'required' => false,
-                'always_include' => false
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-category'
             )
         );
     }
@@ -368,7 +387,6 @@ class WPMethods_WC_To_Google_Sheets {
                 }
                 return implode(', ', $product_names);
                 
-                
             case 'order_amount_with_currency':
                 $currency_symbol = $order->get_currency();
                 $currency_symbol_formatted = get_woocommerce_currency_symbol($currency_symbol);
@@ -382,6 +400,20 @@ class WPMethods_WC_To_Google_Sheets {
                 
             case 'order_currency':
                 return $order->get_currency();
+                
+            case 'payment_method_title':
+                $payment_title = $order->get_payment_method_title();
+                if (empty($payment_title)) {
+                    // Try to get payment gateway title
+                    $payment_method = $order->get_payment_method();
+                    if ($payment_method) {
+                        $gateways = WC()->payment_gateways()->payment_gateways();
+                        if (isset($gateways[$payment_method])) {
+                            $payment_title = $gateways[$payment_method]->get_title();
+                        }
+                    }
+                }
+                return $payment_title ? $payment_title : '';
                 
             case 'order_status':
                 return $order->get_status();
@@ -438,137 +470,20 @@ class WPMethods_WC_To_Google_Sheets {
         if ($hook != 'settings_page_wpmethods-wc-to-google-sheets') {
             return;
         }
+
+        $min = defined('SCRIPT_DEBUG') && SCRIPT_DEBUG ? '' : '.min';
         
-        // Create admin.js content inline
-        $admin_js = '
-        jQuery(document).ready(function($) {
-            // Generate Google Apps Script
-            $("#wpmethods-generate-script").on("click", function(e) {
-                e.preventDefault();
-                
-                var button = $(this);
-                var originalText = button.text();
-                
-                button.text("Generating...").prop("disabled", true);
-                
-                // Get selected fields
-                var selectedFields = [];
-                $("input[name=\'wpmethods_wc_gs_selected_fields[]\']:checked").each(function() {
-                    selectedFields.push($(this).val());
-                });
-                
-                $.ajax({
-                    url: ajaxurl,
-                    type: "POST",
-                    data: {
-                        action: "wpmethods_generate_google_script",
-                        nonce: "' . wp_create_nonce('wpmethods_generate_script_nonce') . '",
-                        fields: selectedFields
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            $("#wpmethods-generated-script").val(response.data.script);
-                            $("#wpmethods-script-output").show();
-                            $("html, body").animate({
-                                scrollTop: $("#wpmethods-script-output").offset().top - 100
-                            }, 500);
-                        } else {
-                            alert("Error generating script. Please try again.");
-                        }
-                    },
-                    error: function() {
-                        alert("Error generating script. Please try again.");
-                    },
-                    complete: function() {
-                        button.text(originalText).prop("disabled", false);
-                    }
-                });
-            });
-            
-            // Copy to clipboard
-            $("#wpmethods-copy-script").on("click", function() {
-                var textarea = $("#wpmethods-generated-script")[0];
-                textarea.select();
-                document.execCommand("copy");
-                
-                $("#wpmethods-copy-status").show().fadeOut(2000);
-            });
-            
-            // Handle required fields
-            $("input[name=\'wpmethods_wc_gs_selected_fields[]\']").each(function() {
-                if ($(this).is(":disabled")) {
-                    $(this).prop("checked", true);
-                }
-            });
-            
-            // Prevent unchecking required fields
-            $("input[name=\'wpmethods_wc_gs_selected_fields[]\']").on("change", function() {
-                if ($(this).is(":disabled") && !$(this).is(":checked")) {
-                    $(this).prop("checked", true);
-                }
-            });
-        });
-        ';
-        
-        // Add inline script
-        wp_add_inline_script('jquery', $admin_js);
-        
-        // Add inline CSS
-        $admin_css = '
-        .wpmethods-settings-wrapper {
-            max-width: 1200px;
-        }
-        .wpmethods-field-group {
-            background: #f9f9f9;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-        .wpmethods-field-group h3 {
-            margin-top: 0;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #ddd;
-        }
-        .wpmethods-field-checkboxes {
-            max-height: 300px;
-            overflow-y: auto;
-            padding: 10px;
-        }
-        .wpmethods-field-item {
-            margin-bottom: 8px;
-            padding: 5px;
-            background: white;
-            border-radius: 3px;
-        }
-        .wpmethods-field-item label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-        }
-        .wpmethods-field-item input[type="checkbox"] {
-            margin-right: 8px;
-        }
-        .wpmethods-field-item .required {
-            color: #d63638;
-            font-weight: bold;
-            margin-left: 5px;
-        }
-        .wpmethods-generated-script {
-            font-family: "Courier New", monospace;
-            font-size: 12px;
-            line-height: 1.4;
-        }
-        #wpmethods-script-output {
-            animation: fadeIn 0.3s ease-in;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        ';
-        
-        wp_add_inline_style('wp-admin', $admin_css);
+        // Enqueue WordPress core styles
+        wp_enqueue_style('wp-color-picker');
+        wp_enqueue_script('wp-color-picker');
+        wp_enqueue_style('wpmethods-wc-gs-admin-style', plugin_dir_url(__FILE__) . 'assets/css/style' . $min . '.css', array(), GS_WC_VERSION);
+        wp_enqueue_script('wpmethods-wc-gs-admin-script', plugin_dir_url(__FILE__) . 'assets/js/admin' . $min . '.js', array('jquery'), GS_WC_VERSION, true);
+       
+        // Localize script to pass PHP variables to JS
+        wp_localize_script('wpmethods-wc-gs-admin-script', 'wpmethods_wc_gs', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('wpmethods_generate_script_nonce')
+        ));
     }
     
     /**
@@ -580,6 +495,7 @@ class WPMethods_WC_To_Google_Sheets {
         register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_script_url', 'esc_url_raw');
         register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_product_categories', array($this, 'wpmethods_sanitize_array'));
         register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_selected_fields', array($this, 'wpmethods_sanitize_array'));
+        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_monthly_sheets', array($this, 'wpmethods_sanitize_checkbox'));
         
         // Main settings section
         add_settings_section(
@@ -597,7 +513,13 @@ class WPMethods_WC_To_Google_Sheets {
             'wpmethods_wc_gs_section'
         );
         
-        
+        add_settings_field(
+            'wpmethods_wc_gs_monthly_sheets',
+            'Monthly Sheets',
+            array($this, 'wpmethods_monthly_sheets_render'),
+            'wpmethods_wc_gs_settings',
+            'wpmethods_wc_gs_section'
+        );
         
         add_settings_field(
             'wpmethods_wc_gs_product_categories',
@@ -635,10 +557,34 @@ class WPMethods_WC_To_Google_Sheets {
     }
     
     /**
+     * Sanitize checkbox input
+     */
+    public function wpmethods_sanitize_checkbox($input) {
+        return $input ? '1' : '0';
+    }
+    
+    /**
      * Section callback
      */
     public function wpmethods_section_callback() {
         echo '<p>Configure the settings for Google Sheets integration.</p>';
+    }
+    
+    /**
+     * Monthly sheets field render
+     */
+    public function wpmethods_monthly_sheets_render() {
+        $value = get_option('wpmethods_wc_gs_monthly_sheets', '0');
+        ?>
+        <label style="display: inline-flex; align-items: center; gap: 10px; padding: 15px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0;">
+            <input type="checkbox" name="wpmethods_wc_gs_monthly_sheets" value="1" <?php checked($value, '1'); ?> style="width: 20px; height: 20px;">
+            <span style="font-weight: 500; font-size: 14px;">
+                <span class="dashicons dashicons-calendar-alt" style="color: #667eea;"></span>
+                Enable automatic monthly sheet creation
+            </span>
+        </label>
+        <p class="description" style="margin-top: 10px;">When enabled, a new sheet will be automatically created for each month (e.g., "January 2024", "February 2024")</p>
+        <?php
     }
     
     /**
@@ -656,19 +602,23 @@ class WPMethods_WC_To_Google_Sheets {
         
         $all_statuses = $this->wpmethods_get_wc_order_statuses();
         
+        echo '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 15px;">';
+        
         foreach ($all_statuses as $status => $label) {
             $checked = in_array($status, $selected_statuses) ? 'checked' : '';
             ?>
-            <div style="margin-bottom: 5px;">
-                <label>
+            <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                     <input type="checkbox" name="wpmethods_wc_gs_order_statuses[]" 
-                           value="<?php echo esc_attr($status); ?>" <?php echo $checked; ?>>
-                    <?php echo esc_html($label); ?>
+                           value="<?php echo esc_attr($status); ?>" <?php echo $checked; ?> style="width: 18px; height: 18px;">
+                    <span style="font-weight: 500; font-size: 14px;"><?php echo esc_html($label); ?></span>
                 </label>
             </div>
             <?php
         }
-        echo '<p class="description">Select order statuses that should trigger sending data to Google Sheets</p>';
+        
+        echo '</div>';
+        echo '<p class="description" style="margin-top: 10px;">Select order statuses that should trigger sending data to Google Sheets</p>';
     }
     
     /**
@@ -705,23 +655,23 @@ class WPMethods_WC_To_Google_Sheets {
             return;
         }
         
-        echo '<div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 10px;">';
+        echo '<div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; background: #f8f9fa; border-radius: 6px;">';
         
         foreach ($all_categories as $cat_id => $cat_name) {
             $checked = in_array($cat_id, $selected_categories) ? 'checked' : '';
             ?>
-            <div style="margin-bottom: 5px;">
-                <label>
+            <div style="margin-bottom: 8px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #e0e0e0;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
                     <input type="checkbox" name="wpmethods_wc_gs_product_categories[]" 
-                           value="<?php echo esc_attr($cat_id); ?>" <?php echo $checked; ?>>
-                    <?php echo esc_html($cat_name); ?>
+                           value="<?php echo esc_attr($cat_id); ?>" <?php echo $checked; ?> style="width: 18px; height: 18px;">
+                    <span style="font-weight: 500; font-size: 14px;"><?php echo esc_html($cat_name); ?></span>
                 </label>
             </div>
             <?php
         }
         
         echo '</div>';
-        echo '<p class="description">Select product categories. Orders will only be sent if they contain at least one product from selected categories. Leave empty to include all categories.</p>';
+        echo '<p class="description" style="margin-top: 10px;">Select product categories. Orders will only be sent if they contain at least one product from selected categories. Leave empty to include all categories.</p>';
     }
     
     /**
@@ -730,44 +680,63 @@ class WPMethods_WC_To_Google_Sheets {
     public function wpmethods_selected_fields_render() {
         $selected_fields = $this->wpmethods_get_selected_fields();
         
-        echo '<h4>Checkout Fields</h4>';
-        echo '<div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; margin-bottom: 20px;">';
+        // Search box
+        ?>
+        <div class="wpmethods-search-box">
+            <input type="text" id="wpmethods-field-search" placeholder="Search fields...">
+        </div>
+        <?php
+        
+        // Display all fields in categories
+        echo '<div class="wpmethods-field-category">';
+        echo '<h3>';
+        echo '<span><span class="dashicons dashicons-list-view"></span> All Fields</span>';
+        echo '<span class="dashicons dashicons-arrow-down"></span>';
+        echo '</h3>';
+        echo '<div class="wpmethods-fields-grid">';
         
         foreach ($this->available_fields as $field_key => $field_info) {
             $checked = in_array($field_key, $selected_fields) ? 'checked' : '';
             $disabled = (isset($field_info['always_include']) && $field_info['always_include']) ? 'disabled' : '';
-            $required = (isset($field_info['required']) && $field_info['required']) ? ' <span style="color:red">*</span>' : '';
+            $required = (isset($field_info['required']) && $field_info['required']) ? ' <span class="required">Required</span>' : '';
+            $icon = isset($field_info['icon']) ? $field_info['icon'] : 'dashicons dashicons-admin-generic';
             ?>
-            <div style="margin-bottom: 5px;">
+            <div class="wpmethods-field-item">
                 <label>
                     <input type="checkbox" name="wpmethods_wc_gs_selected_fields[]" 
                            value="<?php echo esc_attr($field_key); ?>" 
                            <?php echo $checked; ?> <?php echo $disabled; ?>>
-                    <?php echo esc_html($field_info['label']) . $required; ?>
-                    <?php if ($disabled): ?>
-                        <em>(Required)</em>
-                    <?php endif; ?>
+                    <span class="<?php echo esc_attr($icon); ?>" style="color: #667eea;"></span>
+                    <span><?php echo esc_html($field_info['label']); ?></span>
+                    <?php echo $required; ?>
                 </label>
             </div>
             <?php
         }
         
         echo '</div>';
-        echo '<p class="description">Select fields to include in Google Sheets. Required fields (*) are always included.</p>';
+        echo '</div>';
+        
+        echo '<p class="description" style="margin-top: 20px;">Select fields to include in Google Sheets. Required fields are always included and cannot be disabled.</p>';
         ?>
-        <div style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 4px;">
-            <h4>Generate Google Apps Script</h4>
-            <p>Click the button below to generate a Google Apps Script code based on your selected fields:</p>
-            <button type="button" id="wpmethods-generate-script" class="button button-primary">
-                Generate Google Apps Script
+        <div class="wpmethods-feature-box">
+            <h3 style="margin-top: 0; color: #667eea;">
+                <span class="dashicons dashicons-code-standards"></span> Generate Google Apps Script
+            </h3>
+            <p>Click the button below to generate a Google Apps Script code based on your selected fields. This script will handle data submission to your Google Sheets.</p>
+            <button type="button" id="wpmethods-generate-script" class="wpmethods-button">
+                <span class="dashicons dashicons-update"></span> Generate Google Apps Script
             </button>
             <div id="wpmethods-script-output" style="margin-top: 15px; display: none;">
-                <textarea id="wpmethods-generated-script" style="width: 100%; height: 400px; font-family: monospace;" readonly></textarea>
+                <h4>Generated Script</h4>
+                <textarea id="wpmethods-generated-script" style="width: 100%; height: 400px;" readonly></textarea>
                 <p style="margin-top: 10px;">
-                    <button type="button" id="wpmethods-copy-script" class="button button-secondary">
-                        Copy to Clipboard
+                    <button type="button" id="wpmethods-copy-script" class="wpmethods-button wpmethods-button-secondary">
+                        <span class="dashicons dashicons-clipboard"></span> Copy to Clipboard
                     </button>
-                    <span id="wpmethods-copy-status" style="margin-left: 10px; color: green; display: none;">Copied!</span>
+                    <span id="wpmethods-copy-status" style="margin-left: 10px; color: #28a745; font-weight: 600; display: none;">
+                        <span class="dashicons dashicons-yes-alt"></span> Copied!
+                    </span>
                 </p>
             </div>
         </div>
@@ -780,11 +749,16 @@ class WPMethods_WC_To_Google_Sheets {
     public function wpmethods_script_url_render() {
         $value = get_option('wpmethods_wc_gs_script_url', '');
         ?>
-        <input type="url" name="wpmethods_wc_gs_script_url" 
-               value="<?php echo esc_url($value); ?>" 
-               style="width: 500px;" 
-               placeholder="https://script.google.com/macros/s/...">
-        <p class="description">Enter your Google Apps Script web app URL. Get this from Google Apps Script deployment.</p>
+        <div style="max-width: 600px;">
+            <input type="url" name="wpmethods_wc_gs_script_url" 
+                   value="<?php echo esc_url($value); ?>" 
+                   style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;" 
+                   placeholder="https://script.google.com/macros/s/...">
+            <p class="description" style="margin-top: 10px;">
+                <span class="dashicons dashicons-info" style="color: #667eea;"></span>
+                Enter your Google Apps Script web app URL. Get this from Google Apps Script deployment after copying the generated script.
+            </p>
+        </div>
         <?php
     }
     
@@ -800,19 +774,27 @@ class WPMethods_WC_To_Google_Sheets {
         
         $selected_fields = isset($_POST['fields']) ? (array) $_POST['fields'] : $this->wpmethods_get_selected_fields();
         
+        // Check if monthly sheets option is enabled
+        $monthly_sheets = get_option('wpmethods_wc_gs_monthly_sheets', '0');
+        
         // Generate Google Apps Script code
-        $script = $this->generate_google_apps_script($selected_fields);
+        if ($monthly_sheets === '1') {
+            $script = $this->generate_google_apps_script_monthly($selected_fields);
+        } else {
+            $script = $this->generate_google_apps_script_single($selected_fields);
+        }
         
         wp_send_json_success(array(
             'script' => $script,
-            'fields' => $selected_fields
+            'fields' => $selected_fields,
+            'monthly_sheets' => $monthly_sheets
         ));
     }
     
     /**
-     * Generate Google Apps Script code based on selected fields
+     * Generate Google Apps Script code for single sheet
      */
-    private function generate_google_apps_script($selected_fields) {
+    private function generate_google_apps_script_single($selected_fields) {
         // Get field labels for headers
         $headers = array();
         $field_mapping = array();
@@ -829,6 +811,7 @@ class WPMethods_WC_To_Google_Sheets {
         $script = <<<EOT
 // Google Apps Script Code for Google Sheets
 // Generated by WP Methods WooCommerce to Google Sheets Plugin
+// Single Sheet Mode
 // Fields: {$this->get_field_list($selected_fields)}
 
 function doPost(e) {
@@ -873,6 +856,20 @@ function initializeSheet(sheet) {
     if (sheet.getLastRow() === 0) {
         const headers = {$headers_js};
         sheet.appendRow(headers);
+        
+        // Format header row
+        const headerRange = sheet.getRange(1, 1, 1, headers.length);
+        headerRange.setBackground('#4CAF50')
+                   .setFontColor('white')
+                   .setFontWeight('bold');
+        
+        // Set column widths
+        for (let i = 1; i <= headers.length; i++) {
+            sheet.autoResizeColumn(i);
+        }
+        
+        // Freeze header row
+        sheet.setFrozenRows(1);
     }
 }
 
@@ -899,6 +896,15 @@ function addNewRow(sheet, data) {
     });
     
     sheet.appendRow(rowData);
+    
+    // Apply alternating row colors for readability
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+        const rowRange = sheet.getRange(lastRow, 1, 1, fieldOrder.length);
+        if (lastRow % 2 === 0) {
+            rowRange.setBackground('#F5F5F5'); // Light gray for even rows
+        }
+    }
 }
 
 function getFieldKeyFromLabel(fieldLabel) {
@@ -926,6 +932,213 @@ EOT;
     }
     
     /**
+     * Generate Google Apps Script code for monthly sheets
+     */
+    private function generate_google_apps_script_monthly($selected_fields) {
+        // Get field labels for headers
+        $headers = array();
+        $field_mapping = array();
+        foreach ($selected_fields as $field_key) {
+            if (isset($this->available_fields[$field_key])) {
+                $headers[] = $this->available_fields[$field_key]['label'];
+                $field_mapping[$field_key] = $this->available_fields[$field_key]['label'];
+            }
+        }
+        
+        $headers_js = json_encode($headers, JSON_PRETTY_PRINT);
+        $field_mapping_js = json_encode($field_mapping, JSON_PRETTY_PRINT);
+        
+        $script = <<<EOT
+// Google Apps Script Code for Google Sheets
+// Generated by WP Methods WooCommerce to Google Sheets Plugin
+// Monthly Sheets Mode - Automatically creates new sheet for each month
+// Fields: {$this->get_field_list($selected_fields)}
+
+function doPost(e) {
+    try {
+        // Parse the incoming data
+        const data = JSON.parse(e.postData.contents);
+        
+        // Get month from order date (format: YYYY-MM-DD HH:MM:SS)
+        const orderDate = data.order_date;
+        let monthYear = getMonthYearFromDate(orderDate);
+        
+        // Get or create sheet for this month
+        const sheet = getOrCreateMonthlySheet(monthYear);
+        
+        // Check if this order already exists in this month's sheet
+        const orderIds = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
+        const existingRowIndex = orderIds.indexOf(data.order_id.toString());
+        
+        if (existingRowIndex !== -1) {
+            // Update existing row
+            updateExistingRow(sheet, existingRowIndex, data);
+        } else {
+            // Add new row
+            addNewRow(sheet, data);
+        }
+        
+        // Return success response
+        return ContentService.createTextOutput(JSON.stringify({
+            status: 'success',
+            message: 'Order data saved to ' + monthYear + ' sheet successfully'
+        })).setMimeType(ContentService.MimeType.JSON);
+        
+    } catch (error) {
+        // Return error response
+        return ContentService.createTextOutput(JSON.stringify({
+            status: 'error',
+            message: error.toString()
+        })).setMimeType(ContentService.MimeType.JSON);
+    }
+}
+
+function getMonthYearFromDate(dateString) {
+    // Parse date string (format: YYYY-MM-DD HH:MM:SS)
+    const dateParts = dateString.split(' ')[0].split('-');
+    const year = dateParts[0];
+    const monthNum = parseInt(dateParts[1]);
+    
+    // Month names
+    const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    
+    const monthName = monthNames[monthNum - 1];
+    return monthName + ' ' + year;
+}
+
+function getOrCreateMonthlySheet(monthYear) {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = spreadsheet.getSheetByName(monthYear);
+    
+    if (!sheet) {
+        // Create new sheet for the month
+        sheet = spreadsheet.insertSheet(monthYear);
+        
+        // Add headers to the new sheet
+        const headers = {$headers_js};
+        sheet.appendRow(headers);
+        
+        // Format header row
+        const headerRange = sheet.getRange(1, 1, 1, headers.length);
+        headerRange.setBackground('#4CAF50')
+                   .setFontColor('white')
+                   .setFontWeight('bold');
+        
+        // Set column widths
+        for (let i = 1; i <= headers.length; i++) {
+            sheet.autoResizeColumn(i);
+        }
+        
+        // Freeze header row
+        sheet.setFrozenRows(1);
+        
+        // Log sheet creation
+        console.log('Created new sheet: ' + monthYear);
+    }
+    
+    return sheet;
+}
+
+function updateExistingRow(sheet, existingRowIndex, data) {
+    const row = existingRowIndex + 2; // +2 for header row and 0-based index
+    
+    const fieldOrder = {$headers_js};
+    
+    fieldOrder.forEach((fieldLabel, index) => {
+        const fieldKey = getFieldKeyFromLabel(fieldLabel);
+        if (data[fieldKey] !== undefined) {
+            sheet.getRange(row, index + 1).setValue(data[fieldKey]);
+        }
+    });
+    
+    // Highlight updated row
+    const rowRange = sheet.getRange(row, 1, 1, fieldOrder.length);
+    rowRange.setBackground('#FFF9C4'); // Light yellow background
+}
+
+function addNewRow(sheet, data) {
+    const fieldOrder = {$headers_js};
+    const rowData = [];
+    
+    fieldOrder.forEach((fieldLabel) => {
+        const fieldKey = getFieldKeyFromLabel(fieldLabel);
+        rowData.push(data[fieldKey] || '');
+    });
+    
+    sheet.appendRow(rowData);
+    
+    // Apply alternating row colors for readability
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+        const rowRange = sheet.getRange(lastRow, 1, 1, fieldOrder.length);
+        if (lastRow % 2 === 0) {
+            rowRange.setBackground('#F5F5F5'); // Light gray for even rows
+        }
+    }
+}
+
+function getFieldKeyFromLabel(fieldLabel) {
+    const fieldMap = {$field_mapping_js};
+    
+    // Reverse lookup: find key by label
+    for (const [key, label] of Object.entries(fieldMap)) {
+        if (label === fieldLabel) {
+            return key;
+        }
+    }
+    
+    // Fallback: convert label to lowercase with underscores
+    return fieldLabel.toLowerCase().replace(/ /g, '_');
+}
+
+// Function to manually create sheets for past/future months
+function createAllMonthlySheets() {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // Create sheets for current year and next year
+    const currentYear = new Date().getFullYear();
+    const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    
+    // Create sheets for current year
+    for (let month = 0; month < 12; month++) {
+        const monthYear = monthNames[month] + ' ' + currentYear;
+        getOrCreateMonthlySheet(monthYear);
+    }
+    
+    // Create sheets for next year
+    const nextYear = currentYear + 1;
+    for (let month = 0; month < 12; month++) {
+        const monthYear = monthNames[month] + ' ' + nextYear;
+        getOrCreateMonthlySheet(monthYear);
+    }
+    
+    console.log('Created monthly sheets for ' + currentYear + ' and ' + nextYear);
+}
+
+// Function to initialize with current month sheet
+function initializeCurrentMonth() {
+    const currentDate = new Date();
+    const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const monthYear = monthNames[currentDate.getMonth()] + ' ' + currentDate.getFullYear();
+    
+    getOrCreateMonthlySheet(monthYear);
+    console.log('Initialized current month sheet: ' + monthYear);
+}
+EOT;
+
+        return $script;
+    }
+    
+    /**
      * Get field list string
      */
     private function get_field_list($selected_fields) {
@@ -939,72 +1152,141 @@ EOT;
     }
     
     /**
-     * Settings page
+     * Settings page with modern design
      */
     public function wpmethods_settings_page() {
+        $selected_statuses = get_option('wpmethods_wc_gs_order_statuses', array());
+        $selected_fields = $this->wpmethods_get_selected_fields();
+        $monthly_sheets = get_option('wpmethods_wc_gs_monthly_sheets', '0');
+        $selected_categories = $this->wpmethods_get_selected_categories();
         ?>
-        <div class="wrap">
-            <h1>WooCommerce to Google Sheets</h1>
+        <div class="wrap wpmethods-settings-wrapper">
             
-            <form action="options.php" method="post">
+            <!-- Modern Header -->
+            <div class="wpmethods-header">
+                <h1>
+                    <span class="dashicons dashicons-google" style="vertical-align: middle; margin-right: 10px;"></span>
+                    WooCommerce to Google Sheets
+                </h1>
+                <p>Automatically send WooCommerce orders to Google Sheets. Configure your integration below.</p>
+            </div>
+            
+            <!-- Dashboard Stats -->
+            <div class="wpmethods-dashboard">
+                <div class="wpmethods-card">
+                    <h3><span class="dashicons dashicons-admin-settings"></span> Configuration Status</h3>
+                    <div class="wpmethods-stats-grid">
+                        <div class="wpmethods-stat">
+                            <div class="wpmethods-stat-number"><?php echo count($selected_fields); ?></div>
+                            <div class="wpmethods-stat-label">Selected Fields</div>
+                        </div>
+                        <div class="wpmethods-stat">
+                            <div class="wpmethods-stat-number"><?php echo count($selected_statuses); ?></div>
+                            <div class="wpmethods-stat-label">Trigger Statuses</div>
+                        </div>
+                        <div class="wpmethods-stat">
+                            <div class="wpmethods-stat-number"><?php echo $monthly_sheets === '1' ? '✓' : '—'; ?></div>
+                            <div class="wpmethods-stat-label">Monthly Sheets</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="wpmethods-card">
+                    <h3><span class="dashicons dashicons-lightbulb"></span> Quick Tips</h3>
+                    <ul style="margin: 0; padding-left: 20px; color: #666;">
+                        <li style="margin-bottom: 8px;">Required fields are automatically included</li>
+                        <li style="margin-bottom: 8px;">Use monthly sheets for better organization</li>
+                        <li style="margin-bottom: 8px;">Test with one order status first</li>
+                        <li>Watch the setup video for detailed instructions</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Main Settings Form -->
+            <form action="options.php" method="post" style="margin-bottom: 30px;">
                 <?php
                 settings_fields('wpmethods_wc_gs_settings');
                 do_settings_sections('wpmethods_wc_gs_settings');
-                submit_button();
+                submit_button('Save Settings', 'primary wpmethods-button', 'submit', false);
                 ?>
             </form>
             
-            <h3>Current Configuration Summary:</h3>
-            <?php
-            $selected_statuses = get_option('wpmethods_wc_gs_order_statuses', array());
+            <!-- Video Tutorial -->
+            <div class="wpmethods-video-box">
+                <h3><span class="dashicons dashicons-video-alt3"></span> Watch Setup Tutorial</h3>
+                <p style="color: rgba(255,255,255,0.9); margin-bottom: 20px;">Learn how to set up the plugin step by step with our video tutorial.</p>
+                <a href="https://youtu.be/7Kh-uugbods" target="_blank" class="wpmethods-video-button">
+                    <span class="dashicons dashicons-youtube"></span> Watch Tutorial Video
+                </a>
+            </div>
             
-            if (!is_array($selected_statuses)) {
-                $selected_statuses = maybe_unserialize($selected_statuses);
-                if (!is_array($selected_statuses)) {
-                    $selected_statuses = array('completed', 'processing');
-                }
-            }
+            <!-- Donation Section -->
+            <div class="wpmethods-donation-box">
+                <h3><span class="dashicons dashicons-heart"></span> Support This Plugin</h3>
+                <p style="color: #856404; margin-bottom: 20px;">If this plugin has helped your business, consider buying me a coffee to support further development.</p>
+                <a href="https://buymeacoffee.com/ajharrashed" target="_blank" class="wpmethods-donation-button">
+                    <span class="dashicons dashicons-coffee"></span> Buy Me a Coffee
+                </a>
+            </div>
             
-            echo '<p><strong>Trigger Statuses:</strong> ';
-            if (!empty($selected_statuses)) {
-                $status_labels = array();
-                foreach ($selected_statuses as $status) {
-                    $status_labels[] = ucfirst($status);
-                }
-                echo implode(', ', $status_labels);
-            } else {
-                echo 'None selected';
-            }
-            echo '</p>';
+            <!-- Configuration Summary -->
+            <div class="wpmethods-card">
+                <h3><span class="dashicons dashicons-chart-bar"></span> Configuration Summary</h3>
+                
+                <div class="wpmethods-stats-grid">
+                    <div class="wpmethods-stat">
+                        <div class="wpmethods-stat-number">
+                            <?php 
+                            if (!is_array($selected_statuses)) {
+                                $selected_statuses = maybe_unserialize($selected_statuses);
+                                if (!is_array($selected_statuses)) {
+                                    $selected_statuses = array('completed', 'processing');
+                                }
+                            }
+                            echo count($selected_statuses);
+                            ?>
+                        </div>
+                        <div class="wpmethods-stat-label">Trigger Statuses</div>
+                    </div>
+                    
+                    <div class="wpmethods-stat">
+                        <div class="wpmethods-stat-number"><?php echo $monthly_sheets === '1' ? 'Enabled' : 'Single'; ?></div>
+                        <div class="wpmethods-stat-label">Sheet Mode</div>
+                    </div>
+                    
+                    <div class="wpmethods-stat">
+                        <div class="wpmethods-stat-number"><?php echo count($selected_fields); ?></div>
+                        <div class="wpmethods-stat-label">Selected Fields</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px;">
+                    <h4 style="margin-top: 0; margin-bottom: 10px;">Selected Fields:</h4>
+                    <p style="margin: 0; color: #666;">
+                        <?php 
+                        $field_names = array();
+                        foreach ($selected_fields as $field_key) {
+                            if (isset($this->available_fields[$field_key])) {
+                                $field_names[] = $this->available_fields[$field_key]['label'];
+                            }
+                        }
+                        echo implode(', ', $field_names);
+                        ?>
+                    </p>
+                </div>
+                
+                <?php if ($monthly_sheets === '1'): ?>
+                    <div style="margin-top: 20px; padding: 15px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #4CAF50;">
+                        <h4 style="margin-top: 0; color: #2e7d32;">
+                            <span class="dashicons dashicons-calendar-alt"></span> Monthly Sheets Active
+                        </h4>
+                        <p style="margin: 10px 0 0 0; color: #2e7d32;">
+                            Orders will be automatically organized into monthly sheets (<?php echo date('F Y'); ?>, <?php echo date('F Y', strtotime('+1 month')); ?>, etc.)
+                        </p>
+                    </div>
+                <?php endif; ?>
+            </div>
             
-            $selected_fields = $this->wpmethods_get_selected_fields();
-            echo '<p><strong>Selected Fields (' . count($selected_fields) . '):</strong> ';
-            $field_names = array();
-            foreach ($selected_fields as $field_key) {
-                if (isset($this->available_fields[$field_key])) {
-                    $field_names[] = $this->available_fields[$field_key]['label'];
-                }
-            }
-            echo implode(', ', $field_names);
-            echo '</p>';
-            
-            $selected_categories = $this->wpmethods_get_selected_categories();
-            $all_categories = $this->wpmethods_get_product_categories();
-            
-            echo '<p><strong>Selected Categories:</strong> ';
-            if (!empty($selected_categories)) {
-                $category_names = array();
-                foreach ($selected_categories as $cat_id) {
-                    if (isset($all_categories[$cat_id])) {
-                        $category_names[] = $all_categories[$cat_id];
-                    }
-                }
-                echo !empty($category_names) ? implode(', ', $category_names) : 'All categories';
-            } else {
-                echo 'All categories (no filter)';
-            }
-            echo '</p>';
-            ?>
         </div>
         <?php
     }
