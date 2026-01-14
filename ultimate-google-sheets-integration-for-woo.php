@@ -191,7 +191,7 @@ class UGSIW_To_Google_Sheets {
     public function wpmethods_woocommerce_missing_notice() {
         ?>
         <div class="notice notice-error">
-            <p><?php esc_html_e('WP Methods WooCommerce to Google Sheets requires WooCommerce to be installed and activated.', 'google-sheets-integration-for-woo'); ?></p>
+            <p><?php esc_html_e('WP Methods WooCommerce to Google Sheets requires WooCommerce to be installed and activated.', 'ultimate-google-sheets-integration-for-woo'); ?></p>
         </div>
         <?php
     }
