@@ -10,16 +10,16 @@ jQuery(document).ready(function($) {
         
         // Get selected fields
         var selectedFields = [];
-        $("input[name='wpmethods_wc_gs_selected_fields[]']:checked").each(function() {
+        $("input[name='ugsiw_gs_selected_fields[]']:checked").each(function() {
             selectedFields.push($(this).val());
         });
         
         $.ajax({
-            url: wpmethods_wc_gs.ajax_url,
+            url: ugsiw_gs.ajax_url,
             type: "POST",
             data: {
                 action: "wpmethods_generate_google_script",
-                nonce: wpmethods_wc_gs.nonce,
+                nonce: ugsiw_gs.nonce,
                 fields: selectedFields
             },
             success: function(response) {
@@ -52,14 +52,14 @@ jQuery(document).ready(function($) {
     });
 
     // Handle required fields
-    $("input[name='wpmethods_wc_gs_selected_fields[]']").each(function() {
+    $("input[name='ugsiw_gs_selected_fields[]']").each(function() {
         if ($(this).is(":disabled")) {
             $(this).prop("checked", true);
         }
     });
 
     // Prevent unchecking required fields
-    $("input[name='wpmethods_wc_gs_selected_fields[]']").on("change", function() {
+    $("input[name='ugsiw_gs_selected_fields[]']").on("change", function() {
         if ($(this).is(":disabled") && !$(this).is(":checked")) {
             $(this).prop("checked", true);
         }

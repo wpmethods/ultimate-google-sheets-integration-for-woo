@@ -1,26 +1,29 @@
 <?php
 /**
- * Plugin Name: Google Sheets Integration for WooCommerce by WP Methods
+ * Plugin Name: Ultimate Google Sheets Integration for WooCommerce
  * Plugin URI: https://wpmethods.com/plugins/google-sheets-integration-for-woocommerce/
  * Description: Send order data to Google Sheets when order status changes to selected statuses
  * Version: 1.0.0
  * Author: WP Methods
  * Author URI: https://wpmethods.com
  * License: GPL2
- * Text Domain: wpmethods-wc-to-gs
+ * Text Domain: ultimate-google-sheets-integration-for-woo
  * Domain Path: /languages
  * Requires at least: 5.9
  * Requires PHP: 7.4
+ * prefix: ugsiw
  */
 
 // Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
 }
+if ( ! defined('UGSIW_VERSION') ) {
+    define('UGSIW_VERSION', '1.0.0');
+}
 
-define('GS_WC_VERSION', '1.0.0');
 
-class WPMethods_WC_To_Google_Sheets {
+class UGSIW_To_Google_Sheets {
     
     private $available_fields = array();
     
@@ -145,7 +148,7 @@ class WPMethods_WC_To_Google_Sheets {
      * Get selected fields for Google Sheets
      */
     private function wpmethods_get_selected_fields() {
-        $selected_fields = get_option('wpmethods_wc_gs_selected_fields', array());
+        $selected_fields = get_option('ugsiw_gs_selected_fields', array());
         
         // Ensure it's always an array
         if (!is_array($selected_fields)) {
@@ -188,7 +191,7 @@ class WPMethods_WC_To_Google_Sheets {
     public function wpmethods_woocommerce_missing_notice() {
         ?>
         <div class="notice notice-error">
-            <p><?php _e('WP Methods WooCommerce to Google Sheets requires WooCommerce to be installed and activated.', 'wpmethods-wc-to-gs'); ?></p>
+            <p><?php esc_html_e('WP Methods WooCommerce to Google Sheets requires WooCommerce to be installed and activated.', 'google-sheets-integration-for-woo'); ?></p>
         </div>
         <?php
     }
@@ -197,22 +200,22 @@ class WPMethods_WC_To_Google_Sheets {
      * Plugin activation - set default values
      */
     public function wpmethods_activate_plugin() {
-        if (!get_option('wpmethods_wc_gs_order_statuses')) {
-            update_option('wpmethods_wc_gs_order_statuses', array('completed', 'processing'));
+        if (!get_option('ugsiw_gs_order_statuses')) {
+            update_option('ugsiw_gs_order_statuses', array('completed', 'processing'));
         }
         
-        if (!get_option('wpmethods_wc_gs_script_url')) {
-            update_option('wpmethods_wc_gs_script_url', '');
+        if (!get_option('ugsiw_gs_script_url')) {
+            update_option('ugsiw_gs_script_url', '');
         }
         
-        if (!get_option('wpmethods_wc_gs_product_categories')) {
-            update_option('wpmethods_wc_gs_product_categories', array());
+        if (!get_option('ugsiw_gs_product_categories')) {
+            update_option('ugsiw_gs_product_categories', array());
         }
         
         // Set default selected fields (all fields)
-        if (!get_option('wpmethods_wc_gs_selected_fields')) {
+        if (!get_option('ugsiw_gs_selected_fields')) {
             $default_fields = array_keys($this->available_fields);
-            update_option('wpmethods_wc_gs_selected_fields', $default_fields);
+            update_option('ugsiw_gs_selected_fields', $default_fields);
         }
     }
     
@@ -235,7 +238,7 @@ class WPMethods_WC_To_Google_Sheets {
      * Get selected categories as array
      */
     private function wpmethods_get_selected_categories() {
-        $selected_categories = get_option('wpmethods_wc_gs_product_categories', array());
+        $selected_categories = get_option('ugsiw_gs_product_categories', array());
         
         if (!is_array($selected_categories)) {
             if (is_string($selected_categories) && !empty($selected_categories)) {
@@ -283,7 +286,7 @@ class WPMethods_WC_To_Google_Sheets {
      */
     public function wpmethods_send_order_to_sheets($order_id, $old_status, $new_status, $order) {
         
-        $selected_statuses = get_option('wpmethods_wc_gs_order_statuses', array('completed', 'processing'));
+        $selected_statuses = get_option('ugsiw_gs_order_statuses', array('completed', 'processing'));
         
         if (!is_array($selected_statuses)) {
             $selected_statuses = maybe_unserialize($selected_statuses);
@@ -302,7 +305,7 @@ class WPMethods_WC_To_Google_Sheets {
             return;
         }
         
-        $script_url = get_option('wpmethods_wc_gs_script_url', '');
+        $script_url = get_option('ugsiw_gs_script_url', '');
         
         if (empty($script_url)) {
             return;
@@ -490,11 +493,11 @@ class WPMethods_WC_To_Google_Sheets {
         // Enqueue WordPress core styles
         wp_enqueue_style('wp-color-picker');
         wp_enqueue_script('wp-color-picker');
-        wp_enqueue_style('wpmethods-wc-gs-admin-style', plugin_dir_url(__FILE__) . 'assets/css/style' . $min . '.css', array(), GS_WC_VERSION);
-        wp_enqueue_script('wpmethods-wc-gs-admin-script', plugin_dir_url(__FILE__) . 'assets/js/admin' . $min . '.js', array('jquery'), GS_WC_VERSION, true);
+        wp_enqueue_style('wpmethods-wc-gs-admin-style', plugin_dir_url(__FILE__) . 'assets/css/style' . $min . '.css', array(), UGSIW_VERSION);
+        wp_enqueue_script('wpmethods-wc-gs-admin-script', plugin_dir_url(__FILE__) . 'assets/js/admin' . $min . '.js', array('jquery'), UGSIW_VERSION, true);
        
         // Localize script to pass PHP variables to JS
-        wp_localize_script('wpmethods-wc-gs-admin-script', 'wpmethods_wc_gs', array(
+        wp_localize_script('wpmethods-wc-gs-admin-script', 'ugsiw_gs', array(
             'ajax_url' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('wpmethods_generate_script_nonce')
         ));
@@ -505,58 +508,58 @@ class WPMethods_WC_To_Google_Sheets {
      */
     public function wpmethods_settings_init() {
         // Main settings
-        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_order_statuses', array($this, 'wpmethods_sanitize_array'));
-        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_script_url', 'esc_url_raw');
-        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_product_categories', array($this, 'wpmethods_sanitize_array'));
-        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_selected_fields', array($this, 'wpmethods_sanitize_array'));
-        register_setting('wpmethods_wc_gs_settings', 'wpmethods_wc_gs_monthly_sheets', array($this, 'wpmethods_sanitize_checkbox'));
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_order_statuses', array($this, 'wpmethods_sanitize_array'));
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_script_url', 'esc_url_raw');
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_product_categories', array($this, 'wpmethods_sanitize_array'));
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_selected_fields', array($this, 'wpmethods_sanitize_array'));
+        register_setting('ugsiw_gs_settings', 'ugsiw_gs_monthly_sheets', array($this, 'wpmethods_sanitize_checkbox'));
         
         // Main settings section
         add_settings_section(
-            'wpmethods_wc_gs_section',
+            'ugsiw_gs_section',
             'Google Sheets Integration Settings',
             array($this, 'wpmethods_section_callback'),
-            'wpmethods_wc_gs_settings'
+            'ugsiw_gs_settings'
         );
         
         add_settings_field(
-            'wpmethods_wc_gs_order_statuses',
+            'ugsiw_gs_order_statuses',
             'Trigger Order Statuses',
             array($this, 'wpmethods_order_statuses_render'),
-            'wpmethods_wc_gs_settings',
-            'wpmethods_wc_gs_section'
+            'ugsiw_gs_settings',
+            'ugsiw_gs_section'
         );
         
         add_settings_field(
-            'wpmethods_wc_gs_monthly_sheets',
+            'ugsiw_gs_monthly_sheets',
             'Monthly Sheets',
             array($this, 'wpmethods_monthly_sheets_render'),
-            'wpmethods_wc_gs_settings',
-            'wpmethods_wc_gs_section'
+            'ugsiw_gs_settings',
+            'ugsiw_gs_section'
         );
         
         add_settings_field(
-            'wpmethods_wc_gs_product_categories',
+            'ugsiw_gs_product_categories',
             'Product Categories Filter',
             array($this, 'wpmethods_product_categories_render'),
-            'wpmethods_wc_gs_settings',
-            'wpmethods_wc_gs_section'
+            'ugsiw_gs_settings',
+            'ugsiw_gs_section'
         );
 
         add_settings_field(
-            'wpmethods_wc_gs_selected_fields',
+            'ugsiw_gs_selected_fields',
             'Checkout Fields',
             array($this, 'wpmethods_selected_fields_render'),
-            'wpmethods_wc_gs_settings',
-            'wpmethods_wc_gs_section'
+            'ugsiw_gs_settings',
+            'ugsiw_gs_section'
         );
         
         add_settings_field(
-            'wpmethods_wc_gs_script_url',
+            'ugsiw_gs_script_url',
             'Google Apps Script URL',
             array($this, 'wpmethods_script_url_render'),
-            'wpmethods_wc_gs_settings',
-            'wpmethods_wc_gs_section'
+            'ugsiw_gs_settings',
+            'ugsiw_gs_section'
         );
     }
     
@@ -588,10 +591,10 @@ class WPMethods_WC_To_Google_Sheets {
      * Monthly sheets field render
      */
     public function wpmethods_monthly_sheets_render() {
-        $value = get_option('wpmethods_wc_gs_monthly_sheets', '0');
+        $value = get_option('ugsiw_gs_monthly_sheets', '0');
         ?>
         <label style="display: inline-flex; align-items: center; gap: 10px; padding: 15px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0;">
-            <input type="checkbox" name="wpmethods_wc_gs_monthly_sheets" value="1" <?php checked($value, '1'); ?> style="width: 20px; height: 20px;">
+            <input type="checkbox" name="ugsiw_gs_monthly_sheets" value="1" <?php checked($value, '1'); ?> style="width: 20px; height: 20px;">
             <span style="font-weight: 500; font-size: 14px;">
                 <span class="dashicons dashicons-calendar-alt" style="color: #667eea;"></span>
                 Enable automatic monthly sheet creation
@@ -605,7 +608,7 @@ class WPMethods_WC_To_Google_Sheets {
      * Order Statuses field render
      */
     public function wpmethods_order_statuses_render() {
-        $selected_statuses = get_option('wpmethods_wc_gs_order_statuses', array('completed', 'processing'));
+        $selected_statuses = get_option('ugsiw_gs_order_statuses', array('completed', 'processing'));
         
         if (!is_array($selected_statuses)) {
             $selected_statuses = maybe_unserialize($selected_statuses);
@@ -623,8 +626,8 @@ class WPMethods_WC_To_Google_Sheets {
             ?>
             <div style="padding: 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e0e0e0;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                    <input type="checkbox" name="wpmethods_wc_gs_order_statuses[]" 
-                           value="<?php echo esc_attr($status); ?>" <?php echo $checked; ?> style="width: 18px; height: 18px;">
+                    <input type="checkbox" name="ugsiw_gs_order_statuses[]" 
+                           value="<?php echo esc_attr($status); ?>" <?php echo esc_attr($checked); ?> style="width: 18px; height: 18px;">
                     <span style="font-weight: 500; font-size: 14px;"><?php echo esc_html($label); ?></span>
                 </label>
             </div>
@@ -676,8 +679,8 @@ class WPMethods_WC_To_Google_Sheets {
             ?>
             <div style="margin-bottom: 8px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #e0e0e0;">
                 <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
-                    <input type="checkbox" name="wpmethods_wc_gs_product_categories[]" 
-                           value="<?php echo esc_attr($cat_id); ?>" <?php echo $checked; ?> style="width: 18px; height: 18px;">
+                    <input type="checkbox" name="ugsiw_gs_product_categories[]" 
+                           value="<?php echo esc_attr($cat_id); ?>" <?php echo esc_attr($checked); ?> style="width: 18px; height: 18px;">
                     <span style="font-weight: 500; font-size: 14px;"><?php echo esc_html($cat_name); ?></span>
                 </label>
             </div>
@@ -717,9 +720,9 @@ class WPMethods_WC_To_Google_Sheets {
             ?>
             <div class="wpmethods-field-item">
                 <label>
-                    <input type="checkbox" name="wpmethods_wc_gs_selected_fields[]" 
+                    <input type="checkbox" name="ugsiw_gs_selected_fields[]" 
                            value="<?php echo esc_attr($field_key); ?>" 
-                           <?php echo $checked; ?> <?php echo $disabled; ?>>
+                           <?php echo esc_attr($checked); ?> <?php echo esc_attr($disabled); ?>>
                     <span class="<?php echo esc_attr($icon); ?>" style="color: #667eea;"></span>
                     <span><?php echo esc_html($field_info['label']); ?></span>
                     <?php echo $required; ?>
@@ -761,10 +764,10 @@ class WPMethods_WC_To_Google_Sheets {
      * Script URL field render
      */
     public function wpmethods_script_url_render() {
-        $value = get_option('wpmethods_wc_gs_script_url', '');
+        $value = get_option('ugsiw_gs_script_url', '');
         ?>
         <div style="max-width: 600px;">
-            <input type="url" name="wpmethods_wc_gs_script_url" 
+            <input type="url" name="ugsiw_gs_script_url" 
                    value="<?php echo esc_url($value); ?>" 
                    style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;" 
                    placeholder="https://script.google.com/macros/s/...">
@@ -786,10 +789,20 @@ class WPMethods_WC_To_Google_Sheets {
             wp_die('Unauthorized');
         }
         
-        $selected_fields = isset($_POST['fields']) ? (array) $_POST['fields'] : $this->wpmethods_get_selected_fields();
+        $allowed_fields  = array_keys($this->available_fields);
+        $selected_fields = $this->wpmethods_get_selected_fields();
+
+        if ( isset($_POST['fields']) && is_array($_POST['fields']) ) {
+            $selected_fields = array_intersect(
+                array_map('sanitize_key', wp_unslash($_POST['fields'])),
+                $allowed_fields
+            );
+        }
+
+
         
         // Check if monthly sheets option is enabled
-        $monthly_sheets = get_option('wpmethods_wc_gs_monthly_sheets', '0');
+        $monthly_sheets = get_option('ugsiw_gs_monthly_sheets', '0');
         
         // Generate Google Apps Script code
         if ($monthly_sheets === '1') {
@@ -809,336 +822,203 @@ class WPMethods_WC_To_Google_Sheets {
      * Generate Google Apps Script code for single sheet
      */
     private function generate_google_apps_script_single($selected_fields) {
+
         // Get field labels for headers
         $headers = array();
         $field_mapping = array();
+
         foreach ($selected_fields as $field_key) {
             if (isset($this->available_fields[$field_key])) {
                 $headers[] = $this->available_fields[$field_key]['label'];
                 $field_mapping[$field_key] = $this->available_fields[$field_key]['label'];
             }
         }
-        
+
         $headers_js = json_encode($headers, JSON_PRETTY_PRINT);
         $field_mapping_js = json_encode($field_mapping, JSON_PRETTY_PRINT);
-        
-        $script = <<<EOT
-// Google Apps Script Code for Google Sheets
-// Generated by WP Methods WooCommerce to Google Sheets Plugin
-// Single Sheet Mode
-// Fields: {$this->get_field_list($selected_fields)}
+        $field_list = esc_js($this->get_field_list($selected_fields));
 
-function doPost(e) {
-    try {
-        // Parse the incoming data
-        const data = JSON.parse(e.postData.contents);
-        
-        // Get the active sheet
-        const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-        
-        // Initialize headers if sheet is empty
-        initializeSheet(sheet);
-        
-        // Check if this order already exists
-        const orderIds = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-        const existingRowIndex = orderIds.indexOf(data.order_id.toString());
-        
-        if (existingRowIndex !== -1) {
-            // Update existing row
-            updateExistingRow(sheet, existingRowIndex, data);
-        } else {
-            // Add new row
-            addNewRow(sheet, data);
-        }
-        
-        // Return success response
-        return ContentService.createTextOutput(JSON.stringify({
-            status: 'success',
-            message: 'Order data saved successfully'
-        })).setMimeType(ContentService.MimeType.JSON);
-        
-    } catch (error) {
-        // Return error response
-        return ContentService.createTextOutput(JSON.stringify({
-            status: 'error',
-            message: error.toString()
-        })).setMimeType(ContentService.MimeType.JSON);
-    }
-}
+        $script  = "// Google Apps Script Code for Google Sheets\n";
+        $script .= "// Generated by WP Methods WooCommerce to Google Sheets Plugin\n";
+        $script .= "// Single Sheet Mode\n";
+        $script .= "// Fields: {$field_list}\n\n";
 
-function initializeSheet(sheet) {
-    if (sheet.getLastRow() === 0) {
-        const headers = {$headers_js};
-        sheet.appendRow(headers);
-        
-        // Format header row
-        const headerRange = sheet.getRange(1, 1, 1, headers.length);
-        headerRange.setBackground('#4CAF50')
-                   .setFontColor('white')
-                   .setFontWeight('bold');
-        
-        // Set column widths
-        for (let i = 1; i <= headers.length; i++) {
-            sheet.autoResizeColumn(i);
-        }
-        
-        // Freeze header row
-        sheet.setFrozenRows(1);
-    }
-}
+        $script .= "function doPost(e) {\n";
+        $script .= "  try {\n";
+        $script .= "    const data = JSON.parse(e.postData.contents);\n";
+        $script .= "    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n";
+        $script .= "    initializeSheet(sheet);\n\n";
 
-function updateExistingRow(sheet, existingRowIndex, data) {
-    const row = existingRowIndex + 2; // +2 for header row and 0-based index
-    
-    const fieldOrder = {$headers_js};
-    
-    fieldOrder.forEach((fieldLabel, index) => {
-        const fieldKey = getFieldKeyFromLabel(fieldLabel);
-        if (data[fieldKey] !== undefined) {
-            sheet.getRange(row, index + 1).setValue(data[fieldKey]);
-        }
-    });
-}
+        $script .= "    const orderIds = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();\n";
+        $script .= "    const existingRowIndex = orderIds.indexOf(data.order_id.toString());\n\n";
 
-function addNewRow(sheet, data) {
-    const fieldOrder = {$headers_js};
-    const rowData = [];
-    
-    fieldOrder.forEach((fieldLabel) => {
-        const fieldKey = getFieldKeyFromLabel(fieldLabel);
-        rowData.push(data[fieldKey] || '');
-    });
-    
-    sheet.appendRow(rowData);
-    
-    // Apply alternating row colors for readability
-    const lastRow = sheet.getLastRow();
-    if (lastRow > 1) {
-        const rowRange = sheet.getRange(lastRow, 1, 1, fieldOrder.length);
-        if (lastRow % 2 === 0) {
-            rowRange.setBackground('#F5F5F5'); // Light gray for even rows
-        }
-    }
-}
+        $script .= "    if (existingRowIndex !== -1) {\n";
+        $script .= "      updateExistingRow(sheet, existingRowIndex, data);\n";
+        $script .= "    } else {\n";
+        $script .= "      addNewRow(sheet, data);\n";
+        $script .= "    }\n\n";
 
-function getFieldKeyFromLabel(fieldLabel) {
-    const fieldMap = {$field_mapping_js};
-    
-    // Reverse lookup: find key by label
-    for (const [key, label] of Object.entries(fieldMap)) {
-        if (label === fieldLabel) {
-            return key;
-        }
-    }
-    
-    // Fallback: convert label to lowercase with underscores
-    return fieldLabel.toLowerCase().replace(/ /g, '_');
-}
+        $script .= "    return ContentService.createTextOutput(JSON.stringify({\n";
+        $script .= "      status: 'success',\n";
+        $script .= "      message: 'Order data saved successfully'\n";
+        $script .= "    })).setMimeType(ContentService.MimeType.JSON);\n";
 
-// Function to manually initialize the sheet with headers
-function manualInitialize() {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-    initializeSheet(sheet);
-}
-EOT;
+        $script .= "  } catch (error) {\n";
+        $script .= "    return ContentService.createTextOutput(JSON.stringify({\n";
+        $script .= "      status: 'error',\n";
+        $script .= "      message: error.toString()\n";
+        $script .= "    })).setMimeType(ContentService.MimeType.JSON);\n";
+        $script .= "  }\n";
+        $script .= "}\n\n";
+
+        $script .= "function initializeSheet(sheet) {\n";
+        $script .= "  if (sheet.getLastRow() === 0) {\n";
+        $script .= "    const headers = {$headers_js};\n";
+        $script .= "    sheet.appendRow(headers);\n";
+        $script .= "    const headerRange = sheet.getRange(1, 1, 1, headers.length);\n";
+        $script .= "    headerRange.setBackground('#4CAF50').setFontColor('white').setFontWeight('bold');\n";
+        $script .= "    sheet.setFrozenRows(1);\n";
+        $script .= "  }\n";
+        $script .= "}\n\n";
+
+        $script .= "function updateExistingRow(sheet, existingRowIndex, data) {\n";
+        $script .= "  const row = existingRowIndex + 2;\n";
+        $script .= "  const fieldOrder = {$headers_js};\n";
+        $script .= "  fieldOrder.forEach((label, index) => {\n";
+        $script .= "    const key = getFieldKeyFromLabel(label);\n";
+        $script .= "    if (data[key] !== undefined) {\n";
+        $script .= "      sheet.getRange(row, index + 1).setValue(data[key]);\n";
+        $script .= "    }\n";
+        $script .= "  });\n";
+        $script .= "}\n\n";
+
+        $script .= "function addNewRow(sheet, data) {\n";
+        $script .= "  const fieldOrder = {$headers_js};\n";
+        $script .= "  const rowData = [];\n";
+        $script .= "  fieldOrder.forEach(label => {\n";
+        $script .= "    const key = getFieldKeyFromLabel(label);\n";
+        $script .= "    rowData.push(data[key] || '');\n";
+        $script .= "  });\n";
+        $script .= "  sheet.appendRow(rowData);\n";
+        $script .= "}\n\n";
+
+        $script .= "function getFieldKeyFromLabel(label) {\n";
+        $script .= "  const fieldMap = {$field_mapping_js};\n";
+        $script .= "  for (const key in fieldMap) {\n";
+        $script .= "    if (fieldMap[key] === label) return key;\n";
+        $script .= "  }\n";
+        $script .= "  return label.toLowerCase().replace(/ /g, '_');\n";
+        $script .= "}\n\n";
+
+        $script .= "function manualInitialize() {\n";
+        $script .= "  initializeSheet(SpreadsheetApp.getActiveSpreadsheet().getActiveSheet());\n";
+        $script .= "}\n";
 
         return $script;
     }
+
     
     /**
      * Generate Google Apps Script code for monthly sheets
      */
     private function generate_google_apps_script_monthly($selected_fields) {
+
         // Get field labels for headers
         $headers = array();
         $field_mapping = array();
+
         foreach ($selected_fields as $field_key) {
             if (isset($this->available_fields[$field_key])) {
                 $headers[] = $this->available_fields[$field_key]['label'];
                 $field_mapping[$field_key] = $this->available_fields[$field_key]['label'];
             }
         }
-        
-        $headers_js = json_encode($headers, JSON_PRETTY_PRINT);
+
+        $headers_js       = json_encode($headers, JSON_PRETTY_PRINT);
         $field_mapping_js = json_encode($field_mapping, JSON_PRETTY_PRINT);
-        
-        $script = <<<EOT
-// Google Apps Script Code for Google Sheets
-// Generated by WP Methods WooCommerce to Google Sheets Plugin
-// Monthly Sheets Mode - Automatically creates new sheet for each month
-// Fields: {$this->get_field_list($selected_fields)}
+        $field_list       = esc_js($this->get_field_list($selected_fields));
 
-function doPost(e) {
-    try {
-        // Parse the incoming data
-        const data = JSON.parse(e.postData.contents);
-        
-        // Get month from order date (format: YYYY-MM-DD HH:MM:SS)
-        const orderDate = data.order_date;
-        let monthYear = getMonthYearFromDate(orderDate);
-        
-        // Get or create sheet for this month
-        const sheet = getOrCreateMonthlySheet(monthYear);
-        
-        // Check if this order already exists in this month's sheet
-        const orderIds = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();
-        const existingRowIndex = orderIds.indexOf(data.order_id.toString());
-        
-        if (existingRowIndex !== -1) {
-            // Update existing row
-            updateExistingRow(sheet, existingRowIndex, data);
-        } else {
-            // Add new row
-            addNewRow(sheet, data);
-        }
-        
-        // Return success response
-        return ContentService.createTextOutput(JSON.stringify({
-            status: 'success',
-            message: 'Order data saved to ' + monthYear + ' sheet successfully'
-        })).setMimeType(ContentService.MimeType.JSON);
-        
-    } catch (error) {
-        // Return error response
-        return ContentService.createTextOutput(JSON.stringify({
-            status: 'error',
-            message: error.toString()
-        })).setMimeType(ContentService.MimeType.JSON);
-    }
-}
+        $script  = "// Google Apps Script Code for Google Sheets\n";
+        $script .= "// Generated by WP Methods WooCommerce to Google Sheets Plugin\n";
+        $script .= "// Monthly Sheets Mode - Automatically creates new sheet for each month\n";
+        $script .= "// Fields: {$field_list}\n\n";
 
-function getMonthYearFromDate(dateString) {
-    // Parse date string (format: YYYY-MM-DD HH:MM:SS)
-    const dateParts = dateString.split(' ')[0].split('-');
-    const year = dateParts[0];
-    const monthNum = parseInt(dateParts[1]);
-    
-    // Month names
-    const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    
-    const monthName = monthNames[monthNum - 1];
-    return monthName + ' ' + year;
-}
+        $script .= "function doPost(e) {\n";
+        $script .= "  try {\n";
+        $script .= "    const data = JSON.parse(e.postData.contents);\n";
+        $script .= "    const orderDate = data.order_date;\n";
+        $script .= "    const monthYear = getMonthYearFromDate(orderDate);\n";
+        $script .= "    const sheet = getOrCreateMonthlySheet(monthYear);\n\n";
 
-function getOrCreateMonthlySheet(monthYear) {
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    let sheet = spreadsheet.getSheetByName(monthYear);
-    
-    if (!sheet) {
-        // Create new sheet for the month
-        sheet = spreadsheet.insertSheet(monthYear);
-        
-        // Add headers to the new sheet
-        const headers = {$headers_js};
-        sheet.appendRow(headers);
-        
-        // Format header row
-        const headerRange = sheet.getRange(1, 1, 1, headers.length);
-        headerRange.setBackground('#4CAF50')
-                   .setFontColor('white')
-                   .setFontWeight('bold');
-        
-        // Set column widths
-        for (let i = 1; i <= headers.length; i++) {
-            sheet.autoResizeColumn(i);
-        }
-        
-        // Freeze header row
-        sheet.setFrozenRows(1);
-        
-        // Log sheet creation
-        console.log('Created new sheet: ' + monthYear);
-    }
-    
-    return sheet;
-}
+        $script .= "    const orderIds = sheet.getRange(2, 1, sheet.getLastRow(), 1).getValues().flat();\n";
+        $script .= "    const existingRowIndex = orderIds.indexOf(data.order_id.toString());\n\n";
 
-function updateExistingRow(sheet, existingRowIndex, data) {
-    const row = existingRowIndex + 2; // +2 for header row and 0-based index
-    
-    const fieldOrder = {$headers_js};
-    
-    fieldOrder.forEach((fieldLabel, index) => {
-        const fieldKey = getFieldKeyFromLabel(fieldLabel);
-        if (data[fieldKey] !== undefined) {
-            sheet.getRange(row, index + 1).setValue(data[fieldKey]);
-        }
-    });
-    
-}
+        $script .= "    if (existingRowIndex !== -1) {\n";
+        $script .= "      updateExistingRow(sheet, existingRowIndex, data);\n";
+        $script .= "    } else {\n";
+        $script .= "      addNewRow(sheet, data);\n";
+        $script .= "    }\n\n";
 
-function addNewRow(sheet, data) {
-    const fieldOrder = {$headers_js};
-    const rowData = [];
-    
-    fieldOrder.forEach((fieldLabel) => {
-        const fieldKey = getFieldKeyFromLabel(fieldLabel);
-        rowData.push(data[fieldKey] || '');
-    });
-    
-    sheet.appendRow(rowData);
-}
+        $script .= "    return ContentService.createTextOutput(JSON.stringify({\n";
+        $script .= "      status: 'success',\n";
+        $script .= "      message: 'Order data saved to ' + monthYear + ' sheet successfully'\n";
+        $script .= "    })).setMimeType(ContentService.MimeType.JSON);\n";
 
-function getFieldKeyFromLabel(fieldLabel) {
-    const fieldMap = {$field_mapping_js};
-    
-    // Reverse lookup: find key by label
-    for (const [key, label] of Object.entries(fieldMap)) {
-        if (label === fieldLabel) {
-            return key;
-        }
-    }
-    
-    // Fallback: convert label to lowercase with underscores
-    return fieldLabel.toLowerCase().replace(/ /g, '_');
-}
+        $script .= "  } catch (error) {\n";
+        $script .= "    return ContentService.createTextOutput(JSON.stringify({\n";
+        $script .= "      status: 'error',\n";
+        $script .= "      message: error.toString()\n";
+        $script .= "    })).setMimeType(ContentService.MimeType.JSON);\n";
+        $script .= "  }\n";
+        $script .= "}\n\n";
 
-// Function to manually create sheets for past/future months
-function createAllMonthlySheets() {
-    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Create sheets for current year and next year
-    const currentYear = new Date().getFullYear();
-    const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    
-    // Create sheets for current year
-    for (let month = 0; month < 12; month++) {
-        const monthYear = monthNames[month] + ' ' + currentYear;
-        getOrCreateMonthlySheet(monthYear);
-    }
-    
-    // Create sheets for next year
-    const nextYear = currentYear + 1;
-    for (let month = 0; month < 12; month++) {
-        const monthYear = monthNames[month] + ' ' + nextYear;
-        getOrCreateMonthlySheet(monthYear);
-    }
-    
-    console.log('Created monthly sheets for ' + currentYear + ' and ' + nextYear);
-}
+        $script .= "function getMonthYearFromDate(dateString) {\n";
+        $script .= "  const parts = dateString.split(' ')[0].split('-');\n";
+        $script .= "  const year = parts[0];\n";
+        $script .= "  const month = parseInt(parts[1], 10) - 1;\n";
+        $script .= "  const names = ['January','February','March','April','May','June','July','August','September','October','November','December'];\n";
+        $script .= "  return names[month] + ' ' + year;\n";
+        $script .= "}\n\n";
 
-// Function to initialize with current month sheet
-function initializeCurrentMonth() {
-    const currentDate = new Date();
-    const monthNames = [
-        'January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    const monthYear = monthNames[currentDate.getMonth()] + ' ' + currentDate.getFullYear();
-    
-    getOrCreateMonthlySheet(monthYear);
-    console.log('Initialized current month sheet: ' + monthYear);
-}
-EOT;
+        $script .= "function getOrCreateMonthlySheet(monthYear) {\n";
+        $script .= "  const ss = SpreadsheetApp.getActiveSpreadsheet();\n";
+        $script .= "  let sheet = ss.getSheetByName(monthYear);\n\n";
+        $script .= "  if (!sheet) {\n";
+        $script .= "    sheet = ss.insertSheet(monthYear);\n";
+        $script .= "    const headers = {$headers_js};\n";
+        $script .= "    sheet.appendRow(headers);\n";
+        $script .= "    const headerRange = sheet.getRange(1, 1, 1, headers.length);\n";
+        $script .= "    headerRange.setBackground('#4CAF50').setFontColor('white').setFontWeight('bold');\n";
+        $script .= "    sheet.setFrozenRows(1);\n";
+        $script .= "  }\n";
+        $script .= "  return sheet;\n";
+        $script .= "}\n\n";
+
+        $script .= "function updateExistingRow(sheet, existingRowIndex, data) {\n";
+        $script .= "  const row = existingRowIndex + 2;\n";
+        $script .= "  const fields = {$headers_js};\n";
+        $script .= "  fields.forEach((label, index) => {\n";
+        $script .= "    const key = getFieldKeyFromLabel(label);\n";
+        $script .= "    if (data[key] !== undefined) sheet.getRange(row, index + 1).setValue(data[key]);\n";
+        $script .= "  });\n";
+        $script .= "}\n\n";
+
+        $script .= "function addNewRow(sheet, data) {\n";
+        $script .= "  const fields = {$headers_js};\n";
+        $script .= "  const rowData = [];\n";
+        $script .= "  fields.forEach(label => rowData.push(data[getFieldKeyFromLabel(label)] || ''));\n";
+        $script .= "  sheet.appendRow(rowData);\n";
+        $script .= "}\n\n";
+
+        $script .= "function getFieldKeyFromLabel(label) {\n";
+        $script .= "  const map = {$field_mapping_js};\n";
+        $script .= "  for (const key in map) if (map[key] === label) return key;\n";
+        $script .= "  return label.toLowerCase().replace(/ /g, '_');\n";
+        $script .= "}\n";
 
         return $script;
     }
+
     
     /**
      * Get field list string
@@ -1157,9 +1037,9 @@ EOT;
      * Settings page with modern design
      */
     public function wpmethods_settings_page() {
-        $selected_statuses = get_option('wpmethods_wc_gs_order_statuses', array());
+        $selected_statuses = get_option('ugsiw_gs_order_statuses', array());
         $selected_fields = $this->wpmethods_get_selected_fields();
-        $monthly_sheets = get_option('wpmethods_wc_gs_monthly_sheets', '0');
+        $monthly_sheets = get_option('ugsiw_gs_monthly_sheets', '0');
         $selected_categories = $this->wpmethods_get_selected_categories();
         ?>
         <div class="wrap wpmethods-settings-wrapper">
@@ -1207,8 +1087,8 @@ EOT;
             <!-- Main Settings Form -->
             <form action="options.php" method="post" style="margin-bottom: 30px;">
                 <?php
-                settings_fields('wpmethods_wc_gs_settings');
-                do_settings_sections('wpmethods_wc_gs_settings');
+                settings_fields('ugsiw_gs_settings');
+                do_settings_sections('ugsiw_gs_settings');
                 submit_button('Save Settings', 'primary wpmethods-button', 'submit', false);
                 ?>
             </form>
@@ -1272,7 +1152,7 @@ EOT;
                                 $field_names[] = $this->available_fields[$field_key]['label'];
                             }
                         }
-                        echo implode(', ', $field_names);
+                        echo esc_html(implode(', ', $field_names));
                         ?>
                     </p>
                 </div>
@@ -1283,7 +1163,14 @@ EOT;
                             <span class="dashicons dashicons-calendar-alt"></span> Monthly Sheets Active
                         </h4>
                         <p style="margin: 10px 0 0 0; color: #2e7d32;">
-                            Orders will be automatically organized into monthly sheets (<?php echo date('F Y'); ?>, <?php echo date('F Y', strtotime('+1 month')); ?>, etc.)
+                            Orders will be automatically organized into monthly sheets
+                            (
+                            <?php
+                                echo esc_html( gmdate('F Y') );
+                                echo ', ';
+                                echo esc_html( gmdate('F Y', strtotime('+1 month', time())) );
+                            ?>,
+                            etc.)
                         </p>
                     </div>
                 <?php endif; ?>
@@ -1295,4 +1182,4 @@ EOT;
 }
 
 // Initialize the plugin
-new WPMethods_WC_To_Google_Sheets();
+new UGSIW_To_Google_Sheets();

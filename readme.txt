@@ -1,4 +1,4 @@
-=== Google Sheets Integration for WooCommerce ===
+=== Ultimate Google Sheets Integration for WooCommerce ===
 Contributors: wpmethods, ajharrashed
 Tags: google sheet woocommerce, integrate google sheet, google sheets, google sheet
 Requires at least: 5.9
