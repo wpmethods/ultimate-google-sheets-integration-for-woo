@@ -3,6 +3,8 @@
  * Class to handle WooCommerce to Google Sheets integration
  */
 namespace UGSIW;
+use UGSIW\UGSIW_Script_Generator;
+
 
 if (!defined('ABSPATH')) {
     exit;
@@ -18,6 +20,9 @@ class UGSIW_To_Google_Sheets {
         
         // Check if WooCommerce is active
         add_action('admin_init', array($this, 'wpmethods_check_woocommerce'));
+
+        // Initialize script generator
+        $this->script_generator = new UGSIW_Script_Generator($this->available_fields);
         
         // Hook into order status changes
         add_action('woocommerce_order_status_changed', array($this, 'wpmethods_send_order_to_sheets'), 10, 4);
@@ -267,7 +272,7 @@ class UGSIW_To_Google_Sheets {
     }
     
     /**
-     * Send order data to Google Sheets
+     * Send order data to Google Sheets with retry mechanism
      */
     public function wpmethods_send_order_to_sheets($order_id, $old_status, $new_status, $order) {
         
@@ -298,23 +303,53 @@ class UGSIW_To_Google_Sheets {
         
         $order_data = $this->wpmethods_prepare_order_data($order);
         
-        $response = wp_remote_post($script_url, array(
-            'method' => 'POST',
-            'timeout' => 45,
-            'redirection' => 5,
-            'httpversion' => '1.0',
-            'blocking' => true,
-            'headers' => array(
-                'Content-Type' => 'application/json',
-            ),
-            'body' => json_encode($order_data),
-            'cookies' => array()
-        ));
+        // Add retry mechanism for failed requests
+        $max_retries = 3;
+        $retry_delay = 2; // seconds
         
-        // Log for debugging
-        if (is_wp_error($response)) {
-            error_log('Google Sheets Integration Error: ' . $response->get_error_message());
+        for ($attempt = 1; $attempt <= $max_retries; $attempt++) {
+            $response = wp_remote_post($script_url, array(
+                'method' => 'POST',
+                'timeout' => 30, // Increased timeout
+                'redirection' => 5,
+                'httpversion' => '1.1',
+                'blocking' => true,
+                'headers' => array(
+                    'Content-Type' => 'application/json',
+                ),
+                'body' => json_encode($order_data),
+                'data_format' => 'body'
+            ));
+            
+            // Check if request was successful
+            if (!is_wp_error($response)) {
+                $response_code = wp_remote_retrieve_response_code($response);
+                if ($response_code === 200) {
+                    // Success
+                    $body = wp_remote_retrieve_body($response);
+                    $data = json_decode($body, true);
+                    
+                    if (isset($data['status']) && $data['status'] === 'success') {
+                        error_log('Google Sheets Integration: Order ' . $order_id . ' sent successfully. Attempt: ' . $attempt);
+                        return; // Exit on success
+                    } else {
+                        error_log('Google Sheets Integration: Order ' . $order_id . ' - API returned error: ' . print_r($data, true));
+                    }
+                } else {
+                    error_log('Google Sheets Integration: Order ' . $order_id . ' - HTTP Error: ' . $response_code);
+                }
+            } else {
+                error_log('Google Sheets Integration: Order ' . $order_id . ' - WP Error: ' . $response->get_error_message());
+            }
+            
+            // If not last attempt, wait and retry
+            if ($attempt < $max_retries) {
+                sleep($retry_delay * $attempt); // Exponential backoff
+            }
         }
+        
+        // If all attempts failed, log final error
+        error_log('Google Sheets Integration: Order ' . $order_id . ' failed after ' . $max_retries . ' attempts');
     }
     
     /**
@@ -789,17 +824,11 @@ class UGSIW_To_Google_Sheets {
             );
         }
 
-
-        
         // Check if monthly sheets option is enabled
         $monthly_sheets = get_option('ugsiw_gs_monthly_sheets', '0');
         
-        // Generate Google Apps Script code
-        if ($monthly_sheets === '1') {
-            $script = $this->generate_google_apps_script_monthly($selected_fields);
-        } else {
-            $script = $this->generate_google_apps_script_single($selected_fields);
-        }
+        // Generate Google Apps Script code using the separate generator
+        $script = $this->script_generator->generate_script($selected_fields, ($monthly_sheets === '1'));
         
         wp_send_json_success(array(
             'script' => $script,
@@ -808,473 +837,6 @@ class UGSIW_To_Google_Sheets {
         ));
     }
     
-    /**
-     * Generate Google Apps Script code for single sheet - FIXED VERSION
-     */
-    private function generate_google_apps_script_single($selected_fields) {
-
-        // Get field labels for headers
-        $headers = array();
-        $field_mapping = array();
-
-        foreach ($selected_fields as $field_key) {
-            if (isset($this->available_fields[$field_key])) {
-                $headers[] = $this->available_fields[$field_key]['label'];
-                $field_mapping[$field_key] = $this->available_fields[$field_key]['label'];
-            }
-        }
-
-        $headers_js = json_encode($headers, JSON_PRETTY_PRINT);
-        $field_mapping_js = json_encode($field_mapping, JSON_PRETTY_PRINT);
-        $field_list = esc_js($this->get_field_list($selected_fields));
-
-        $script  = "// Google Apps Script Code for Google Sheets\n";
-        $script .= "// Generated by WP Methods WooCommerce to Google Sheets Plugin\n";
-        $script .= "// Single Sheet Mode - UPDATED to fix order updates\n";
-        $script .= "// Fields: {$field_list}\n\n";
-
-        $script .= "function doPost(e) {\n";
-        $script .= "  try {\n";
-        $script .= "    const data = JSON.parse(e.postData.contents);\n";
-        $script .= "    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n";
-        $script .= "    \n";
-        $script .= "    // Initialize sheet if needed\n";
-        $script .= "    if (sheet.getLastRow() === 0) {\n";
-        $script .= "      const headers = {$headers_js};\n";
-        $script .= "      sheet.appendRow(headers);\n";
-        $script .= "      const headerRange = sheet.getRange(1, 1, 1, headers.length);\n";
-        $script .= "      headerRange.setBackground('#4CAF50').setFontColor('white').setFontWeight('bold');\n";
-        $script .= "      sheet.setFrozenRows(1);\n";
-        $script .= "    }\n\n";
-
-        $script .= "    // Find order ID column index\n";
-        $script .= "    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];\n";
-        $script .= "    const orderIdColumn = headers.indexOf('Order ID') + 1;\n";
-        $script .= "    \n";
-        $script .= "    if (orderIdColumn === 0) {\n";
-        $script .= "      throw new Error('Order ID column not found in sheet headers');\n";
-        $script .= "    }\n\n";
-
-        $script .= "    // Check if order already exists\n";
-        $script .= "    let existingRow = null;\n";
-        $script .= "    if (sheet.getLastRow() > 1) {\n";
-        $script .= "      const orderIds = sheet.getRange(2, orderIdColumn, sheet.getLastRow() - 1, 1).getValues();\n";
-        $script .= "      \n";
-        $script .= "      for (let i = 0; i < orderIds.length; i++) {\n";
-        $script .= "        const rowOrderId = orderIds[i][0];\n";
-        $script .= "        if (rowOrderId.toString() === data.order_id.toString()) {\n";
-        $script .= "          existingRow = i + 2; // +2 because headers and 0-based index\n";
-        $script .= "          break;\n";
-        $script .= "        }\n";
-        $script .= "      }\n";
-        $script .= "    }\n\n";
-
-        $script .= "    if (existingRow) {\n";
-        $script .= "      // Update existing order\n";
-        $script .= "      updateOrderRow(sheet, existingRow, data, headers);\n";
-        $script .= "      \n";
-        $script .= "      return ContentService.createTextOutput(JSON.stringify({\n";
-        $script .= "        status: 'success',\n";
-        $script .= "        message: 'Order updated successfully',\n";
-        $script .= "        order_id: data.order_id,\n";
-        $script .= "        row: existingRow\n";
-        $script .= "      })).setMimeType(ContentService.MimeType.JSON);\n";
-        $script .= "    } else {\n";
-        $script .= "      // Add new order\n";
-        $script .= "      const newRow = addNewOrderRow(sheet, data, headers);\n";
-        $script .= "      \n";
-        $script .= "      return ContentService.createTextOutput(JSON.stringify({\n";
-        $script .= "        status: 'success',\n";
-        $script .= "        message: 'Order added successfully',\n";
-        $script .= "        order_id: data.order_id,\n";
-        $script .= "        row: newRow\n";
-        $script .= "      })).setMimeType(ContentService.MimeType.JSON);\n";
-        $script .= "    }\n";
-
-        $script .= "  } catch (error) {\n";
-        $script .= "    console.error('Error:', error);\n";
-        $script .= "    return ContentService.createTextOutput(JSON.stringify({\n";
-        $script .= "      status: 'error',\n";
-        $script .= "      message: error.toString(),\n";
-        $script .= "      stack: error.stack\n";
-        $script .= "    })).setMimeType(ContentService.MimeType.JSON);\n";
-        $script .= "  }\n";
-        $script .= "}\n\n";
-
-        $script .= "function updateOrderRow(sheet, row, data, headers) {\n";
-        $script .= "  const fieldMap = {$field_mapping_js};\n";
-        $script .= "  \n";
-        $script .= "  // Update each field that exists in the data\n";
-        $script .= "  for (const key in data) {\n";
-        $script .= "    if (fieldMap[key]) {\n";
-        $script .= "      // Find which column this field is in\n";
-        $script .= "      const columnIndex = headers.indexOf(fieldMap[key]) + 1;\n";
-        $script .= "      if (columnIndex > 0) {\n";
-        $script .= "        sheet.getRange(row, columnIndex).setValue(data[key]);\n";
-        $script .= "      }\n";
-        $script .= "    }\n";
-        $script .= "  }\n";
-        $script .= "  \n";
-        $script .= "  // Add update timestamp\n";
-        $script .= "  const timestampColumn = headers.length + 1;\n";
-        $script .= "  sheet.getRange(row, timestampColumn).setValue(new Date());\n";
-        $script .= "  \n";
-        $script .= "  // Set header for timestamp if needed\n";
-        $script .= "  if (sheet.getRange(1, timestampColumn).getValue() === '') {\n";
-        $script .= "    sheet.getRange(1, timestampColumn).setValue('Last Updated');\n";
-        $script .= "    sheet.getRange(1, timestampColumn).setBackground('#FFC107').setFontWeight('bold');\n";
-        $script .= "  }\n";
-        $script .= "}\n\n";
-
-        $script .= "function addNewOrderRow(sheet, data, headers) {\n";
-        $script .= "  const fieldMap = {$field_mapping_js};\n";
-        $script .= "  const rowData = [];\n";
-        $script .= "  \n";
-        $script .= "  // Build row in the correct order based on headers\n";
-        $script .= "  headers.forEach(header => {\n";
-        $script .= "    let found = false;\n";
-        $script .= "    for (const key in fieldMap) {\n";
-        $script .= "      if (fieldMap[key] === header) {\n";
-        $script .= "        rowData.push(data[key] || '');\n";
-        $script .= "        found = true;\n";
-        $script .= "        break;\n";
-        $script .= "      }\n";
-        $script .= "    }\n";
-        $script .= "    if (!found) {\n";
-        $script .= "      rowData.push('');\n";
-        $script .= "    }\n";
-        $script .= "  });\n";
-        $script .= "  \n";
-        $script .= "  // Add the row\n";
-        $script .= "  sheet.appendRow(rowData);\n";
-        $script .= "  const newRow = sheet.getLastRow();\n";
-        $script .= "  \n";
-        $script .= "  // Add timestamp\n";
-        $script .= "  const timestampColumn = headers.length + 1;\n";
-        $script .= "  sheet.getRange(newRow, timestampColumn).setValue(new Date());\n";
-        $script .= "  \n";
-        $script .= "  // Set header for timestamp if needed\n";
-        $script .= "  if (sheet.getRange(1, timestampColumn).getValue() === '') {\n";
-        $script .= "    sheet.getRange(1, timestampColumn).setValue('Date Added');\n";
-        $script .= "    sheet.getRange(1, timestampColumn).setBackground('#4CAF50').setFontColor('white').setFontWeight('bold');\n";
-        $script .= "  }\n";
-        $script .= "  \n";
-        $script .= "  return newRow;\n";
-        $script .= "}\n\n";
-
-        $script .= "function getFieldKeyFromLabel(label) {\n";
-        $script .= "  const fieldMap = {$field_mapping_js};\n";
-        $script .= "  for (const key in fieldMap) {\n";
-        $script .= "    if (fieldMap[key] === label) return key;\n";
-        $script .= "  }\n";
-        $script .= "  return label.toLowerCase().replace(/ /g, '_');\n";
-        $script .= "}\n\n";
-
-        $script .= "// Test function - run this manually to see if the script works\n";
-        $script .= "function testUpdate() {\n";
-        $script .= "  const testData = {\n";
-        $script .= "    order_id: 12345,\n";
-        $script .= "    billing_name: 'Test Customer',\n";
-        $script .= "    billing_email: 'test@example.com',\n";
-        $script .= "    order_status: 'processing',\n";
-        $script .= "    order_amount_with_currency: '$100.00',\n";
-        $script .= "    order_date: '2024-01-15 10:30:00'\n";
-        $script .= "  };\n";
-        $script .= "  \n";
-        $script .= "  // Simulate a POST request\n";
-        $script .= "  const mockPost = {\n";
-        $script .= "    postData: {\n";
-        $script .= "      contents: JSON.stringify(testData)\n";
-        $script .= "    }\n";
-        $script .= "  };\n";
-        $script .= "  \n";
-        $script .= "  const result = doPost(mockPost);\n";
-        $script .= "  console.log('Test result:', result.getContent());\n";
-        $script .= "}\n\n";
-
-        $script .= "// Force update all orders - useful if you need to re-sync\n";
-        $script .= "function forceInitialize() {\n";
-        $script .= "  const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n";
-        $script .= "  sheet.clear();\n";
-        $script .= "  \n";
-        $script .= "  const headers = {$headers_js};\n";
-        $script .= "  sheet.appendRow(headers);\n";
-        $script .= "  const headerRange = sheet.getRange(1, 1, 1, headers.length);\n";
-        $script .= "  headerRange.setBackground('#4CAF50').setFontColor('white').setFontWeight('bold');\n";
-        $script .= "  sheet.setFrozenRows(1);\n";
-        $script .= "  \n";
-        $script .= "  console.log('Sheet initialized with headers:', headers);\n";
-        $script .= "}\n";
-
-        return $script;
-    }
-
-    /**
-     * Generate Google Apps Script code for monthly sheets - FIXED VERSION
-     */
-    private function generate_google_apps_script_monthly($selected_fields) {
-
-        // Get field labels for headers
-        $headers = array();
-        $field_mapping = array();
-
-        foreach ($selected_fields as $field_key) {
-            if (isset($this->available_fields[$field_key])) {
-                $headers[] = $this->available_fields[$field_key]['label'];
-                $field_mapping[$field_key] = $this->available_fields[$field_key]['label'];
-            }
-        }
-
-        $headers_js       = json_encode($headers, JSON_PRETTY_PRINT);
-        $field_mapping_js = json_encode($field_mapping, JSON_PRETTY_PRINT);
-        $field_list       = esc_js($this->get_field_list($selected_fields));
-
-        $script  = "// Google Apps Script Code for Google Sheets\n";
-        $script .= "// Generated by WP Methods WooCommerce to Google Sheets Plugin\n";
-        $script .= "// Monthly Sheets Mode - UPDATED to fix order updates\n";
-        $script .= "// Fields: {$field_list}\n\n";
-
-        $script .= "function doPost(e) {\n";
-        $script .= "  try {\n";
-        $script .= "    const data = JSON.parse(e.postData.contents);\n";
-        $script .= "    \n";
-        $script .= "    // Get or create the monthly sheet\n";
-        $script .= "    const orderDate = data.order_date || new Date().toISOString();\n";
-        $script .= "    const monthYear = getMonthYearFromDate(orderDate);\n";
-        $script .= "    const sheet = getOrCreateMonthlySheet(monthYear);\n\n";
-
-        $script .= "    // Find order ID column index\n";
-        $script .= "    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];\n";
-        $script .= "    const orderIdColumn = headers.indexOf('Order ID') + 1;\n";
-        $script .= "    \n";
-        $script .= "    if (orderIdColumn === 0) {\n";
-        $script .= "      throw new Error('Order ID column not found in sheet headers');\n";
-        $script .= "    }\n\n";
-
-        $script .= "    // Check if order already exists\n";
-        $script .= "    let existingRow = null;\n";
-        $script .= "    if (sheet.getLastRow() > 1) {\n";
-        $script .= "      const orderIds = sheet.getRange(2, orderIdColumn, sheet.getLastRow() - 1, 1).getValues();\n";
-        $script .= "      \n";
-        $script .= "      for (let i = 0; i < orderIds.length; i++) {\n";
-        $script .= "        const rowOrderId = orderIds[i][0];\n";
-        $script .= "        if (rowOrderId && rowOrderId.toString() === data.order_id.toString()) {\n";
-        $script .= "          existingRow = i + 2; // +2 because headers and 0-based index\n";
-        $script .= "          break;\n";
-        $script .= "        }\n";
-        $script .= "      }\n";
-        $script .= "    }\n\n";
-
-        $script .= "    if (existingRow) {\n";
-        $script .= "      // Update existing order\n";
-        $script .= "      updateOrderRow(sheet, existingRow, data, headers);\n";
-        $script .= "      \n";
-        $script .= "      return ContentService.createTextOutput(JSON.stringify({\n";
-        $script .= "        status: 'success',\n";
-        $script .= "        message: 'Order updated in ' + monthYear + ' sheet',\n";
-        $script .= "        order_id: data.order_id,\n";
-        $script .= "        sheet: monthYear,\n";
-        $script .= "        row: existingRow\n";
-        $script .= "      })).setMimeType(ContentService.MimeType.JSON);\n";
-        $script .= "    } else {\n";
-        $script .= "      // Add new order\n";
-        $script .= "      const newRow = addNewOrderRow(sheet, data, headers);\n";
-        $script .= "      \n";
-        $script .= "      return ContentService.createTextOutput(JSON.stringify({\n";
-        $script .= "        status: 'success',\n";
-        $script .= "        message: 'Order added to ' + monthYear + ' sheet',\n";
-        $script .= "        order_id: data.order_id,\n";
-        $script .= "        sheet: monthYear,\n";
-        $script .= "        row: newRow\n";
-        $script .= "      })).setMimeType(ContentService.MimeType.JSON);\n";
-        $script .= "    }\n";
-
-        $script .= "  } catch (error) {\n";
-        $script .= "    console.error('Error:', error);\n";
-        $script .= "    return ContentService.createTextOutput(JSON.stringify({\n";
-        $script .= "      status: 'error',\n";
-        $script .= "      message: error.toString(),\n";
-        $script .= "      stack: error.stack\n";
-        $script .= "    })).setMimeType(ContentService.MimeType.JSON);\n";
-        $script .= "  }\n";
-        $script .= "}\n\n";
-
-        $script .= "function getMonthYearFromDate(dateString) {\n";
-        $script .= "  try {\n";
-        $script .= "    // Handle different date formats\n";
-        $script .= "    let date;\n";
-        $script .= "    if (dateString.includes('T')) {\n";
-        $script .= "      // ISO format\n";
-        $script .= "      date = new Date(dateString);\n";
-        $script .= "    } else if (dateString.includes('-')) {\n";
-        $script .= "      // YYYY-MM-DD format\n";
-        $script .= "      const parts = dateString.split(' ')[0].split('-');\n";
-        $script .= "      date = new Date(parts[0], parts[1] - 1, parts[2] || 1);\n";
-        $script .= "    } else {\n";
-        $script .= "      // Use current date as fallback\n";
-        $script .= "      date = new Date();\n";
-        $script .= "    }\n";
-        $script .= "    \n";
-        $script .= "    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', \n";
-        $script .= "                       'July', 'August', 'September', 'October', 'November', 'December'];\n";
-        $script .= "    const month = monthNames[date.getMonth()];\n";
-        $script .= "    const year = date.getFullYear();\n";
-        $script .= "    \n";
-        $script .= "    return month + ' ' + year;\n";
-        $script .= "  } catch (e) {\n";
-        $script .= "    // If date parsing fails, use current month\n";
-        $script .= "    const now = new Date();\n";
-        $script .= "    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', \n";
-        $script .= "                       'July', 'August', 'September', 'October', 'November', 'December'];\n";
-        $script .= "    return monthNames[now.getMonth()] + ' ' + now.getFullYear();\n";
-        $script .= "  }\n";
-        $script .= "}\n\n";
-
-        $script .= "function getOrCreateMonthlySheet(monthYear) {\n";
-        $script .= "  const ss = SpreadsheetApp.getActiveSpreadsheet();\n";
-        $script .= "  let sheet = ss.getSheetByName(monthYear);\n\n";
-        $script .= "  if (!sheet) {\n";
-        $script .= "    sheet = ss.insertSheet(monthYear);\n";
-        $script .= "    const headers = {$headers_js};\n";
-        $script .= "    sheet.appendRow(headers);\n";
-        $script .= "    const headerRange = sheet.getRange(1, 1, 1, headers.length);\n";
-        $script .= "    headerRange.setBackground('#4CAF50').setFontColor('white').setFontWeight('bold');\n";
-        $script .= "    sheet.setFrozenRows(1);\n";
-        $script .= "    \n";
-        $script .= "    console.log('Created new sheet:', monthYear);\n";
-        $script .= "  }\n";
-        $script .= "  \n";
-        $script .= "  return sheet;\n";
-        $script .= "}\n\n";
-
-        $script .= "function updateOrderRow(sheet, row, data, headers) {\n";
-        $script .= "  const fieldMap = {$field_mapping_js};\n";
-        $script .= "  \n";
-        $script .= "  // Update each field that exists in the data\n";
-        $script .= "  for (const key in data) {\n";
-        $script .= "    if (fieldMap[key]) {\n";
-        $script .= "      // Find which column this field is in\n";
-        $script .= "      const columnIndex = headers.indexOf(fieldMap[key]) + 1;\n";
-        $script .= "      if (columnIndex > 0) {\n";
-        $script .= "        sheet.getRange(row, columnIndex).setValue(data[key]);\n";
-        $script .= "      }\n";
-        $script .= "    }\n";
-        $script .= "  }\n";
-        $script .= "  \n";
-        $script .= "  // Add update timestamp\n";
-        $script .= "  const timestampColumn = headers.length + 1;\n";
-        $script .= "  sheet.getRange(row, timestampColumn).setValue(new Date());\n";
-        $script .= "  \n";
-        $script .= "  // Set header for timestamp if needed\n";
-        $script .= "  if (sheet.getRange(1, timestampColumn).getValue() === '') {\n";
-        $script .= "    sheet.getRange(1, timestampColumn).setValue('Last Updated');\n";
-        $script .= "    sheet.getRange(1, timestampColumn).setBackground('#FFC107').setFontWeight('bold');\n";
-        $script .= "  }\n";
-        $script .= "  \n";
-        $script .= "  console.log('Updated order', data.order_id, 'in row', row);\n";
-        $script .= "}\n\n";
-
-        $script .= "function addNewOrderRow(sheet, data, headers) {\n";
-        $script .= "  const fieldMap = {$field_mapping_js};\n";
-        $script .= "  const rowData = [];\n";
-        $script .= "  \n";
-        $script .= "  // Build row in the correct order based on headers\n";
-        $script .= "  headers.forEach(header => {\n";
-        $script .= "    let found = false;\n";
-        $script .= "    for (const key in fieldMap) {\n";
-        $script .= "      if (fieldMap[key] === header) {\n";
-        $script .= "        rowData.push(data[key] || '');\n";
-        $script .= "        found = true;\n";
-        $script .= "        break;\n";
-        $script .= "      }\n";
-        $script .= "    }\n";
-        $script .= "    if (!found) {\n";
-        $script .= "      rowData.push('');\n";
-        $script .= "    }\n";
-        $script .= "  });\n";
-        $script .= "  \n";
-        $script .= "  // Add the row\n";
-        $script .= "  sheet.appendRow(rowData);\n";
-        $script .= "  const newRow = sheet.getLastRow();\n";
-        $script .= "  \n";
-        $script .= "  // Add timestamp\n";
-        $script .= "  const timestampColumn = headers.length + 1;\n";
-        $script .= "  sheet.getRange(newRow, timestampColumn).setValue(new Date());\n";
-        $script .= "  \n";
-        $script .= "  // Set header for timestamp if needed\n";
-        $script .= "  if (sheet.getRange(1, timestampColumn).getValue() === '') {\n";
-        $script .= "    sheet.getRange(1, timestampColumn).setValue('Date Added');\n";
-        $script .= "    sheet.getRange(1, timestampColumn).setBackground('#4CAF50').setFontColor('white').setFontWeight('bold');\n";
-        $script .= "  }\n";
-        $script .= "  \n";
-        $script .= "  console.log('Added new order', data.order_id, 'in row', newRow);\n";
-        $script .= "  return newRow;\n";
-        $script .= "}\n\n";
-
-        $script .= "function getFieldKeyFromLabel(label) {\n";
-        $script .= "  const fieldMap = {$field_mapping_js};\n";
-        $script .= "  for (const key in fieldMap) {\n";
-        $script .= "    if (fieldMap[key] === label) return key;\n";
-        $script .= "  }\n";
-        $script .= "  return label.toLowerCase().replace(/ /g, '_');\n";
-        $script .= "}\n\n";
-
-        $script .= "// Debug function to see all monthly sheets\n";
-        $script .= "function listMonthlySheets() {\n";
-        $script .= "  const ss = SpreadsheetApp.getActiveSpreadsheet();\n";
-        $script .= "  const sheets = ss.getSheets();\n";
-        $script .= "  const monthlySheets = [];\n";
-        $script .= "  \n";
-        $script .= "  sheets.forEach(sheet => {\n";
-        $script .= "    const sheetName = sheet.getName();\n";
-        $script .= "    // Check if sheet name matches monthly pattern\n";
-        $script .= "    if (sheetName.match(/^(January|February|March|April|May|June|July|August|September|October|November|December) \\d{4}$/)) {\n";
-        $script .= "      monthlySheets.push(sheetName);\n";
-        $script .= "    }\n";
-        $script .= "  });\n";
-        $script .= "  \n";
-        $script .= "  console.log('Monthly sheets:', monthlySheets);\n";
-        $script .= "  return monthlySheets;\n";
-        $script .= "}\n\n";
-
-        $script .= "// Manual test function\n";
-        $script .= "function testMonthlyUpdate() {\n";
-        $script .= "  const testData = {\n";
-        $script .= "    order_id: 99999,\n";
-        $script .= "    billing_name: 'Monthly Test Customer',\n";
-        $script .= "    billing_email: 'monthly@example.com',\n";
-        $script .= "    order_status: 'processing',\n";
-        $script .= "    order_amount_with_currency: '$150.00',\n";
-        $script .= "    order_date: new Date().toISOString()\n";
-        $script .= "  };\n";
-        $script .= "  \n";
-        $script .= "  // Simulate a POST request\n";
-        $script .= "  const mockPost = {\n";
-        $script .= "    postData: {\n";
-        $script .= "      contents: JSON.stringify(testData)\n";
-        $script .= "    }\n";
-        $script .= "  };\n";
-        $script .= "  \n";
-        $script .= "  const result = doPost(mockPost);\n";
-        $script .= "  console.log('Monthly test result:', result.getContent());\n";
-        $script .= "}\n";
-
-        return $script;
-    }
-
-    
-    /**
-     * Get field list string
-     */
-    private function get_field_list($selected_fields) {
-        $field_names = array();
-        foreach ($selected_fields as $field_key) {
-            if (isset($this->available_fields[$field_key])) {
-                $field_names[] = $this->available_fields[$field_key]['label'];
-            }
-        }
-        return implode(', ', $field_names);
-    }
     
     /**
      * Settings page with modern design
