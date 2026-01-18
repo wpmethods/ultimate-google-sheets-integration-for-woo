@@ -56,6 +56,18 @@ class UGSIW_To_Google_Sheets {
                 'always_include' => true,
                 'icon' => 'dashicons dashicons-cart'
             ),
+            'order_amount_with_currency' => array(
+                'label' => 'Order Amount',
+                'required' => true,
+                'always_include' => true,
+                'icon' => 'dashicons dashicons-money'
+            ),
+            'order_currency' => array(
+                'label' => 'Order Currency',
+                'required' => false,
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-tag'
+            ),
             'billing_name' => array(
                 'label' => 'Billing Name',
                 'required' => true,
@@ -86,18 +98,7 @@ class UGSIW_To_Google_Sheets {
                 'always_include' => true,
                 'icon' => 'dashicons dashicons-products'
             ),
-            'order_amount_with_currency' => array(
-                'label' => 'Order Amount',
-                'required' => true,
-                'always_include' => true,
-                'icon' => 'dashicons dashicons-money'
-            ),
-            'order_currency' => array(
-                'label' => 'Order Currency',
-                'required' => false,
-                'always_include' => false,
-                'icon' => 'dashicons dashicons-tag'
-            ),
+            
             'payment_method_title' => array(
                 'label' => 'Payment Method',
                 'required' => false,
@@ -471,6 +472,17 @@ class UGSIW_To_Google_Sheets {
         $selected_fields = $this->wpmethods_get_selected_fields();
         $order_data = array();
         
+        // If Pro is not active, ensure pro-only fields are not included in the payload
+        if (!$this->is_pro_active) {
+            foreach ($this->available_fields as $fkey => $finfo) {
+                if (isset($finfo['pro']) && $finfo['pro']) {
+                    if (($k = array_search($fkey, $selected_fields)) !== false) {
+                        unset($selected_fields[$k]);
+                    }
+                }
+            }
+            $selected_fields = array_values($selected_fields);
+        }
         foreach ($selected_fields as $field_key) {
             if (isset($this->available_fields[$field_key])) {
                 $value = $this->get_field_value($field_key, $order);
@@ -490,6 +502,21 @@ class UGSIW_To_Google_Sheets {
         switch ($field_key) {
             case 'order_id':
                 return $order->get_id();
+
+            case 'order_amount_with_currency':
+                $currency_symbol = $order->get_currency();
+                $currency_symbol_formatted = get_woocommerce_currency_symbol($currency_symbol);
+                // Fix: Don't use HTML entities, just send the raw symbol
+                $symbol = $currency_symbol_formatted;
+                // If it's an HTML entity, decode it
+                if (strpos($symbol, '&#') !== false) {
+                    $symbol = html_entity_decode($symbol, ENT_QUOTES, 'UTF-8');
+                }
+                return $symbol . $order->get_total();
+                
+            case 'order_currency':
+                return $order->get_currency();
+                
                 
             case 'billing_name':
                 return $order->get_billing_first_name() . ' ' . $order->get_billing_last_name();
@@ -531,20 +558,6 @@ class UGSIW_To_Google_Sheets {
                 }
                 return implode(', ', $product_names);
                 
-            case 'order_amount_with_currency':
-                $currency_symbol = $order->get_currency();
-                $currency_symbol_formatted = get_woocommerce_currency_symbol($currency_symbol);
-                // Fix: Don't use HTML entities, just send the raw symbol
-                $symbol = $currency_symbol_formatted;
-                // If it's an HTML entity, decode it
-                if (strpos($symbol, '&#') !== false) {
-                    $symbol = html_entity_decode($symbol, ENT_QUOTES, 'UTF-8');
-                }
-                return $symbol . $order->get_total();
-                
-            case 'order_currency':
-                return $order->get_currency();
-                
             case 'payment_method_title':
                 $payment_title = $order->get_payment_method_title();
                 if (empty($payment_title)) {
@@ -568,6 +581,28 @@ class UGSIW_To_Google_Sheets {
                 
             case 'product_categories':
                 return $this->wpmethods_get_order_categories($order);
+
+            case 'coupon_used':
+                // Try WC_Order::get_used_coupons() first
+                if (method_exists($order, 'get_used_coupons')) {
+                    $coupons = $order->get_used_coupons();
+                    if (is_array($coupons) && !empty($coupons)) {
+                        return implode(', ', $coupons);
+                    }
+                }
+
+                // Fallback: inspect coupon items
+                $coupon_codes = array();
+                foreach ($order->get_items('coupon') as $coupon_item) {
+                    if (is_array($coupon_item) && isset($coupon_item['code'])) {
+                        $coupon_codes[] = $coupon_item['code'];
+                    } elseif (is_object($coupon_item) && method_exists($coupon_item, 'get_code')) {
+                        $coupon_codes[] = $coupon_item->get_code();
+                    }
+                }
+
+                $coupon_codes = array_filter($coupon_codes, function($c) { return trim($c) !== ''; });
+                return !empty($coupon_codes) ? implode(', ', $coupon_codes) : '';
 
             case 'product_sku':
                 $skus = array();
@@ -625,6 +660,16 @@ class UGSIW_To_Google_Sheets {
             case 'product_type':
                 return $this->get_order_product_types($order);
             
+            case 'customer_id':
+                // Return the WP user ID for the customer if available, otherwise empty
+                $cust_id = null;
+                if (method_exists($order, 'get_customer_id')) {
+                    $cust_id = $order->get_customer_id();
+                } elseif (method_exists($order, 'get_user_id')) {
+                    $cust_id = $order->get_user_id();
+                }
+                return $cust_id ? (string) $cust_id : '';
+
             case 'customer_note':
                 return $order->get_customer_note();
 
@@ -1195,6 +1240,12 @@ class UGSIW_To_Google_Sheets {
             $is_pro_field = isset($field_info['pro']) && $field_info['pro'];
             $disabled = '';
             $pro_badge = '';
+
+            // Disable Required fields
+            if (isset($field_info['required']) && $field_info['required']) {
+                $disabled = 'disabled';
+            }
+            
             if ($is_pro_field && !$this->is_pro_active) {
                 $disabled = 'disabled';
                 $pro_badge = ' <span style="background:#ffc107;color:#663c00;padding:3px 6px;border-radius:12px;font-size:11px;margin-left:8px;">PRO</span>';
@@ -1296,6 +1347,32 @@ class UGSIW_To_Google_Sheets {
             'custom_sheet_name'=> ($custom_sheet_name === '1' || $custom_sheet_name === 1 || $custom_sheet_name === true),
             'custom_template' => $custom_template,
         );
+
+        // If Pro is not active, force single-sheet mode and remove any Pro fields from selection
+        if (!$this->is_pro_active) {
+            $sheet_mode = 'none';
+            $monthly_sheets = '0';
+            $daily_weekly = 'none';
+            $product_sheets = '0';
+            $custom_sheet_name = '0';
+            $pro_features = array(
+                'daily_weekly' => 'none',
+                'product_sheets' => false,
+                'custom_sheet_name' => false,
+                'custom_template' => '',
+            );
+
+            // Remove pro-only fields from selected fields so generator and payload won't include them
+            foreach ($this->available_fields as $fkey => $finfo) {
+                if (isset($finfo['pro']) && $finfo['pro']) {
+                    if (($k = array_search($fkey, $selected_fields)) !== false) {
+                        unset($selected_fields[$k]);
+                    }
+                }
+            }
+            // Reindex array
+            $selected_fields = array_values($selected_fields);
+        }
 
         // Generate Google Apps Script code using the separate generator (pass pro features)
         $script = $this->script_generator->generate_script($selected_fields, ($monthly_sheets === '1'), $pro_features);

@@ -675,16 +675,38 @@ class UGSIW_Script_Generator {
         $script .= "  }\n";
         $script .= "}\n\n";
 
+        // Add helper to create or get sheet (same as daily generator)
+        $script .= "function getOrCreateSheet(sheetName) {\n";
+        $script .= "  const ss = SpreadsheetApp.getActiveSpreadsheet();\n";
+        $script .= "  let sheet = ss.getSheetByName(sheetName);\n\n";
+        $script .= "  if (!sheet) {\n";
+        $script .= "    sheet = ss.insertSheet(sheetName);\n";
+        $script .= "    const headers = {$headers_js};\n";
+        $script .= "    // Add 'Last Updated' column from the start\n";
+        $script .= "    headers.push('Last Updated');\n";
+        $script .= "    sheet.appendRow(headers);\n";
+        $script .= "    const headerRange = sheet.getRange(1, 1, 1, headers.length);\n";
+        $script .= "    headerRange.setBackground('#4CAF50').setFontColor('white').setFontWeight('bold');\n";
+        $script .= "    // Format the Last Updated header\n";
+        $script .= "    sheet.getRange(1, headers.length).setBackground('#FFC107').setFontWeight('bold');\n";
+        $script .= "    sheet.setFrozenRows(1);\n";
+        $script .= "    console.log('Created new weekly sheet:', sheetName);\n";
+        $script .= "  }\n";
+        $script .= "  \n";
+        $script .= "  return sheet;\n";
+        $script .= "}\n\n";
+
         $script .= "function doPost(e) {\n";
         $script .= "  try {\n";
         $script .= "    const data = JSON.parse(e.postData.contents);\n";
-        
-        // Get sheet based on custom naming or default
+
+        // Get sheet based on custom naming or weekly name
         if ($custom_sheet_name && !empty($custom_template)) {
             $script .= "    const sheetName = generateCustomSheetName(data);\n";
             $script .= "    const sheet = getOrCreateSheet(sheetName);\n";
         } else {
-            $script .= "    const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();\n";
+            $script .= "    const sheetName = getWeeklySheetName(data.order_date ? data.order_date : new Date().toISOString());\n";
+            $script .= "    const sheet = getOrCreateSheet(sheetName);\n";
         }
         
         $script .= "    \n";
