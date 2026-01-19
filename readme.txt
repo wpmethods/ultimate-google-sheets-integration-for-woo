@@ -39,7 +39,7 @@ Streamline your order management, reporting, and data analysis with seamless, re
 ✅ Priority Support - Fast help
 
 
-Made with love by [WP Methods](https://wpmethods.com)
+Get The Pro Plugin [WP Methods](https://wpmethods.com/product/send-orders-to-google-sheets-for-woocommerce)
 
 🎁If you like this plugin, consider supporting development: [Donate](https://buymeacoffee.com/ajharrashed)
 
@@ -65,12 +65,12 @@ No, You must install and active woocommerce plugin to make this plugin work.
 
 == Screenshots ==
 
-1. Show order list from specific status
-2. Change table styles
-3. Show customer order information
-4. Change order status background, icon, text
-5. Buy Now Button to directly order specific product.
-6. Responsive for mobile device
+1. Send order data to google sheet
+2. Configuration Status
+3. Trigger Order Statuses & Sheet Mode
+4. Product Categories Filter - Send Data from Activate Categories
+5. Checkout Fields - Active if you want to show on the google sheet
+6. Auto Generate Google App Script
 
 == Changelog ==
 
