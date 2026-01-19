@@ -83,4 +83,22 @@ jQuery(document).ready(function($) {
             }
         });
     });
+
+    // Add/remove Apps Script URL rows (moved from inline PHP)
+    $(document).on('click', '#ugsiw-add-script-url', function(e) {
+        e.preventDefault();
+        var row = jQuery('<div/>', { 'class': 'ugsiw-script-url-row', 'style': 'display:flex;gap:8px;margin-bottom:8px;' });
+        row.append('<input type="url" name="ugsiw_gs_script_urls[]" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:10px;border:1px solid #ddd;border-radius:4px;">');
+        row.append('<button type="button" class="button ugsiw-remove-script-url">Remove</button>');
+        jQuery('#ugsiw-script-urls-list').append(row);
+    });
+
+    $(document).on('click', '.ugsiw-remove-script-url', function(e) {
+        e.preventDefault();
+        if ($('#ugsiw-script-urls-list .ugsiw-script-url-row').length > 1) {
+            $(this).closest('.ugsiw-script-url-row').remove();
+        } else {
+            $(this).siblings('input').val('');
+        }
+    });
 });

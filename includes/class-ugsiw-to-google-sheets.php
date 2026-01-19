@@ -254,6 +254,17 @@ class UGSIW_To_Google_Sheets {
         if (!get_option('ugsiw_gs_script_url')) {
             update_option('ugsiw_gs_script_url', '');
         }
+
+        // If Pro is active, ensure the plural option exists for multiple URLs
+        if ($this->is_pro_active && !get_option('ugsiw_gs_script_urls')) {
+            // Migrate single URL if present
+            $single = get_option('ugsiw_gs_script_url', '');
+            if (!empty($single)) {
+                update_option('ugsiw_gs_script_urls', array($single));
+            } else {
+                update_option('ugsiw_gs_script_urls', array());
+            }
+        }
         
         if (!get_option('ugsiw_gs_product_categories')) {
             update_option('ugsiw_gs_product_categories', array());
@@ -303,6 +314,58 @@ class UGSIW_To_Google_Sheets {
         $selected_categories = array_map('intval', $selected_categories);
         
         return $selected_categories;
+    }
+
+    /**
+     * Get configured Apps Script URLs.
+     * Returns an array of sanitized URLs. For backward compatibility
+     * falls back to the single `ugsiw_gs_script_url` option if needed.
+     */
+    private function ugsiw_get_script_urls() {
+        // Pro users can store multiple URLs in ugsiw_gs_script_urls
+        if ($this->is_pro_active) {
+            $urls = get_option('ugsiw_gs_script_urls', array());
+
+            if (!is_array($urls)) {
+                if (is_string($urls) && !empty($urls)) {
+                    $un = maybe_unserialize($urls);
+                    if (is_array($un)) {
+                        $urls = $un;
+                    } else {
+                        $urls = array_map('trim', explode(',', $urls));
+                    }
+                } else {
+                    $urls = array();
+                }
+            }
+
+            $clean = array();
+            foreach ($urls as $u) {
+                $u = trim($u);
+                if ($u !== '') {
+                    $clean[] = esc_url_raw($u);
+                }
+            }
+
+            // If none set, try to migrate single option
+            if (empty($clean)) {
+                $single = get_option('ugsiw_gs_script_url', '');
+                if (!empty($single)) {
+                    $clean[] = esc_url_raw($single);
+                }
+            }
+
+            return array_values($clean);
+        }
+
+        // Free users get only the single URL option
+        $single = get_option('ugsiw_gs_script_url', '');
+        $single = is_array($single) ? $single : trim($single);
+        if (!empty($single)) {
+            return array(esc_url_raw($single));
+        }
+
+        return array();
     }
 
     /**
@@ -413,10 +476,11 @@ class UGSIW_To_Google_Sheets {
 
         // Offload sending to background worker to reduce order response time.
         // Prefer Action Scheduler (used by WooCommerce). Fallbacks below.
-        $script_url = get_option('ugsiw_gs_script_url', '');
+        // Determine configured Apps Script URLs (supports multiple for Pro)
+        $script_urls = $this->ugsiw_get_script_urls();
 
-        // If nothing to send, bail early
-        if (empty($script_url) && !($this->is_pro_active && get_option('ugsiw_gs_forward_webhook', '0') === '1')) {
+        // If nothing to send, bail early (unless webhook forwarding enabled)
+        if (empty($script_urls) && !($this->is_pro_active && get_option('ugsiw_gs_forward_webhook', '0') === '1')) {
             return;
         }
 
@@ -448,17 +512,25 @@ class UGSIW_To_Google_Sheets {
             }
         }
 
-        if (!empty($script_url)) {
-            wp_remote_post($script_url, array(
-                'method' => 'POST',
-                'timeout' => 3,
-                'redirection' => 2,
-                'httpversion' => '1.1',
-                'blocking' => false,
-                'headers' => array('Content-Type' => 'application/json'),
-                'body' => wp_json_encode($order_data),
-                'data_format' => 'body'
-            ));
+        // Send to configured Apps Script URLs (supports multiple for Pro)
+        $script_urls = $this->ugsiw_get_script_urls();
+
+        if (!empty($script_urls)) {
+            foreach ($script_urls as $script_url) {
+                if (empty($script_url)) {
+                    continue;
+                }
+                wp_remote_post($script_url, array(
+                    'method' => 'POST',
+                    'timeout' => 3,
+                    'redirection' => 2,
+                    'httpversion' => '1.1',
+                    'blocking' => false,
+                    'headers' => array('Content-Type' => 'application/json'),
+                    'body' => wp_json_encode($order_data),
+                    'data_format' => 'body'
+                ));
+            }
         }
 
         return;
@@ -505,9 +577,9 @@ class UGSIW_To_Google_Sheets {
             }
         }
 
-        // Get Apps Script URL
-        $script_url = get_option('ugsiw_gs_script_url', '');
-        if (empty($script_url)) {
+        // Send to configured Apps Script URL(s)
+        $script_urls = $this->ugsiw_get_script_urls();
+        if (empty($script_urls)) {
             return;
         }
 
@@ -515,41 +587,48 @@ class UGSIW_To_Google_Sheets {
         $max_retries = 3;
         $retry_delay = 2; // seconds base
 
-        for ($attempt = 1; $attempt <= $max_retries; $attempt++) {
-            $response = wp_remote_post($script_url, array(
-                'method' => 'POST',
-                'timeout' => 20,
-                'redirection' => 2,
-                'httpversion' => '1.1',
-                'blocking' => true,
-                'headers' => array('Content-Type' => 'application/json'),
-                'body' => wp_json_encode($order_data),
-                'data_format' => 'body'
-            ));
-
-            if (is_wp_error($response)) {
-                $this->ugsiw_debug_log('UGSIW Apps Script Error: ' . $response->get_error_message());
-            } else {
-                $response_code = wp_remote_retrieve_response_code($response);
-                $body = wp_remote_retrieve_body($response);
-                if ($response_code === 200) {
-                    $data = json_decode($body, true);
-                    if (isset($data['status']) && $data['status'] === 'success') {
-                        return; // success
-                    }
-                }
-
-                // Log non-successful responses in debug
-                $clean_body = wp_strip_all_tags($body);
-                if (is_string($clean_body) && strlen($clean_body) > 200) {
-                    $clean_body = substr($clean_body, 0, 200) . '...';
-                }
-                $this->ugsiw_debug_log('UGSIW Apps Script non-success response: ' . $response_code . ' - ' . $clean_body);
+        foreach ($script_urls as $script_url) {
+            if (empty($script_url)) {
+                continue;
             }
 
-            // Exponential backoff before retrying
-            if ($attempt < $max_retries) {
-                sleep($retry_delay * $attempt);
+            for ($attempt = 1; $attempt <= $max_retries; $attempt++) {
+                $response = wp_remote_post($script_url, array(
+                    'method' => 'POST',
+                    'timeout' => 20,
+                    'redirection' => 2,
+                    'httpversion' => '1.1',
+                    'blocking' => true,
+                    'headers' => array('Content-Type' => 'application/json'),
+                    'body' => wp_json_encode($order_data),
+                    'data_format' => 'body'
+                ));
+
+                if (is_wp_error($response)) {
+                    $this->ugsiw_debug_log('UGSIW Apps Script Error: ' . $response->get_error_message());
+                } else {
+                    $response_code = wp_remote_retrieve_response_code($response);
+                    $body = wp_remote_retrieve_body($response);
+                    if ($response_code === 200) {
+                        $data = json_decode($body, true);
+                        if (isset($data['status']) && $data['status'] === 'success') {
+                            // success for this script URL, stop retrying it
+                            break;
+                        }
+                    }
+
+                    // Log non-successful responses in debug
+                    $clean_body = wp_strip_all_tags($body);
+                    if (is_string($clean_body) && strlen($clean_body) > 200) {
+                        $clean_body = substr($clean_body, 0, 200) . '...';
+                    }
+                    $this->ugsiw_debug_log('UGSIW Apps Script non-success response: ' . $response_code . ' - ' . $clean_body);
+                }
+
+                // Exponential backoff before retrying
+                if ($attempt < $max_retries) {
+                    sleep($retry_delay * $attempt);
+                }
             }
         }
     }
@@ -892,6 +971,10 @@ class UGSIW_To_Google_Sheets {
         // Main settings
         register_setting('ugsiw_gs_settings', 'ugsiw_gs_order_statuses', array($this, 'ugsiw_sanitize_array'));
         register_setting('ugsiw_gs_settings', 'ugsiw_gs_script_url', 'esc_url_raw');
+        // For Pro: allow multiple Apps Script URLs
+        if ($this->is_pro_active) {
+            register_setting('ugsiw_gs_settings', 'ugsiw_gs_script_urls', array($this, 'ugsiw_sanitize_array'));
+        }
         register_setting('ugsiw_gs_settings', 'ugsiw_gs_product_categories', array($this, 'ugsiw_sanitize_array'));
         register_setting('ugsiw_gs_settings', 'ugsiw_gs_selected_fields', array($this, 'ugsiw_sanitize_array'));
         register_setting('ugsiw_gs_settings', 'ugsiw_gs_monthly_sheets', array($this, 'ugsiw_sanitize_checkbox'));
@@ -923,19 +1006,20 @@ class UGSIW_To_Google_Sheets {
             'ugsiw_gs_section'
         );
         
-        // Replace separate monthly/daily/product/custom fields with a single Sheet Mode selector
-        add_settings_field(
-            'ugsiw_gs_sheet_mode',
-            'Sheet Mode',
-            array($this, 'ugsiw_sheet_mode_render'),
-            'ugsiw_gs_settings',
-            'ugsiw_gs_section'
-        );
         
         add_settings_field(
             'ugsiw_gs_product_categories',
             'Product Categories Filter',
             array($this, 'ugsiw_product_categories_render'),
+            'ugsiw_gs_settings',
+            'ugsiw_gs_section'
+        );
+
+        // Replace separate monthly/daily/product/custom fields with a single Sheet Mode selector
+        add_settings_field(
+            'ugsiw_gs_sheet_mode',
+            'Sheet Mode',
+            array($this, 'ugsiw_sheet_mode_render'),
             'ugsiw_gs_settings',
             'ugsiw_gs_section'
         );
@@ -1441,19 +1525,78 @@ class UGSIW_To_Google_Sheets {
      * Script URL field render
      */
     public function ugsiw_script_url_render() {
-        $value = get_option('ugsiw_gs_script_url', '');
-        ?>
-        <div style="max-width: 600px;">
-            <input type="url" name="ugsiw_gs_script_url" 
-                   value="<?php echo esc_url($value); ?>" 
-                   style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;" 
-                   placeholder="https://script.google.com/macros/s/...">
-            <p class="description" style="margin-top: 10px;">
-                <span class="dashicons dashicons-info" style="color: #667eea;"></span>
-                Enter your Google Apps Script web app URL. Get this from Google Apps Script deployment after copying the generated script.
-            </p>
-        </div>
-        <?php
+        // If Pro active allow multiple URLs, otherwise a single URL
+        if ($this->is_pro_active) {
+            $urls = get_option('ugsiw_gs_script_urls', array());
+            if (!is_array($urls)) {
+                if (is_string($urls) && !empty($urls)) {
+                    $un = maybe_unserialize($urls);
+                    if (is_array($un)) {
+                        $urls = $un;
+                    } else {
+                        $urls = array_map('trim', explode(',', $urls));
+                    }
+                } else {
+                    $urls = array();
+                }
+            }
+            // Fallback to single option if empty
+            if (empty($urls)) {
+                $single = get_option('ugsiw_gs_script_url', '');
+                if (!empty($single)) {
+                    $urls = array($single);
+                }
+            }
+            ?>
+            <div style="max-width: 800px;">
+                <div id="ugsiw-script-urls-list">
+                    <?php
+                    $index = 0;
+                    foreach ($urls as $u) {
+                        ?>
+                        <div class="ugsiw-script-url-row" style="display:flex;gap:8px;margin-bottom:8px;">
+                            <input type="url" name="ugsiw_gs_script_urls[]" value="<?php echo esc_attr($u); ?>" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:10px;border:1px solid #ddd;border-radius:4px;">
+                            <button type="button" class="button ugsiw-remove-script-url">Remove</button>
+                        </div>
+                        <?php
+                        $index++;
+                    }
+
+                    if ($index === 0) {
+                        // render empty row
+                        ?>
+                        <div class="ugsiw-script-url-row" style="display:flex;gap:8px;margin-bottom:8px;">
+                            <input type="url" name="ugsiw_gs_script_urls[]" value="" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:10px;border:1px solid #ddd;border-radius:4px;">
+                            <button type="button" class="button ugsiw-remove-script-url">Remove</button>
+                        </div>
+                        <?php
+                    }
+                    ?>
+                </div>
+                <p style="margin-top:6px;"><button type="button" class="button" id="ugsiw-add-script-url">Add another Apps Script URL</button></p>
+                <p class="description" style="margin-top: 10px;">
+                    <span class="dashicons dashicons-info" style="color: #667eea;"></span>
+                    Enter one or more Google Apps Script web app URLs. Each configured URL will receive the order payload.
+                </p>
+            </div>
+
+            
+            <?php
+        } else {
+            $value = get_option('ugsiw_gs_script_url', '');
+            ?>
+            <div style="max-width: 600px;">
+                <input type="url" name="ugsiw_gs_script_url" 
+                       value="<?php echo esc_url($value); ?>" 
+                       style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px;" 
+                       placeholder="https://script.google.com/macros/s/...">
+                <p class="description" style="margin-top: 10px;">
+                    <span class="dashicons dashicons-info" style="color: #667eea;"></span>
+                    Enter your Google Apps Script web app URL. Get this from Google Apps Script deployment after copying the generated script.
+                </p>
+            </div>
+            <?php
+        }
     }
     
     /**
