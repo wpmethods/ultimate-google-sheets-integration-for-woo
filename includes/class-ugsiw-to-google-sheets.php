@@ -92,13 +92,6 @@ class UGSIW_To_Google_Sheets {
                 'always_include' => false,
                 'icon' => 'dashicons dashicons-location'
             ),
-            'product_name' => array(
-                'label' => 'Product Name',
-                'required' => true,
-                'always_include' => true,
-                'icon' => 'dashicons dashicons-products'
-            ),
-            
             'payment_method_title' => array(
                 'label' => 'Payment Method',
                 'required' => false,
@@ -117,55 +110,49 @@ class UGSIW_To_Google_Sheets {
                 'always_include' => true,
                 'icon' => 'dashicons dashicons-calendar'
             ),
+            'product_name' => array(
+                'label' => 'Product Name',
+                'required' => true,
+                'always_include' => true,
+                'icon' => 'dashicons dashicons-products'
+            ),
             'product_categories' => array(
                 'label' => 'Product Categories',
                 'required' => false,
                 'always_include' => false,
                 'icon' => 'dashicons dashicons-category'
             ),
-            'customer_note' => array(
-                'label' => 'Customer Note',
+            'product_type' => array(
+                'label' => 'Product Type',
                 'required' => false,
                 'always_include' => false,
-                'icon' => 'dashicons dashicons-edit'
+                'icon' => 'dashicons dashicons-tag'
             ),
+            
             'shipping_method' => array(
                 'label' => 'Shipping Method',
                 'required' => false,
                 'always_include' => false,
                 'icon' => 'dashicons dashicons-car'
             ),
-            'product_type' => array(
-                'label' => 'Product Type',
+            
+            'customer_note' => array(
+                'label' => 'Customer Note',
                 'required' => false,
                 'always_include' => false,
-                'icon' => 'dashicons dashicons-tag'
+                'icon' => 'dashicons dashicons-edit'
+            )
+            ,
+            'total_discount' => array(
+                'label' => 'Total Discount',
+                'required' => false,
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-dismiss'
             )
         );
         
         // Add pro fields (always include so non-active users can see PRO badges)
         $this->available_fields = array_merge($this->available_fields, array(
-            'customer_id' => array(
-                'label' => 'Customer ID',
-                'required' => false,
-                'always_include' => false,
-                'icon' => 'dashicons dashicons-id',
-                'pro' => true
-            ),
-            'coupon_used' => array(
-                'label' => 'Coupon Used',
-                'required' => false,
-                'always_include' => false,
-                'icon' => 'dashicons dashicons-tag',
-                'pro' => true
-            ),
-            'product_sku' => array(
-                'label' => 'Product SKU',
-                'required' => false,
-                'always_include' => false,
-                'icon' => 'dashicons dashicons-welcome-widgets-menus',
-                'pro' => true
-            ),
             'product_image_link' => array(
                 'label' => 'Product Image Link',
                 'required' => false,
@@ -192,6 +179,27 @@ class UGSIW_To_Google_Sheets {
                 'required' => false,
                 'always_include' => false,
                 'icon' => 'dashicons dashicons-calculator',
+                'pro' => true
+            ),
+            'customer_id' => array(
+                'label' => 'Customer ID',
+                'required' => false,
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-id',
+                'pro' => true
+            ),
+            'product_sku' => array(
+                'label' => 'Product SKU',
+                'required' => false,
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-welcome-widgets-menus',
+                'pro' => true
+            ),
+            'coupon_used_amount' => array(
+                'label' => 'Coupon Used',
+                'required' => false,
+                'always_include' => false,
+                'icon' => 'dashicons dashicons-money',
                 'pro' => true
             )
         ));
@@ -739,14 +747,7 @@ class UGSIW_To_Google_Sheets {
                 }
                 
                 return implode(', ', $address_parts);
-                
-            case 'product_name':
-                $product_names = array();
-                foreach ($order->get_items() as $item) {
-                    $product_names[] = $item->get_name();
-                }
-                return implode(', ', $product_names);
-                
+
             case 'payment_method_title':
                 $payment_title = $order->get_payment_method_title();
                 if (empty($payment_title)) {
@@ -760,38 +761,173 @@ class UGSIW_To_Google_Sheets {
                     }
                 }
                 return $payment_title ? $payment_title : '';
-                
+
+
             case 'order_status':
                 return $order->get_status();
+
                 
-            case 'order_date':
-                $date_created = $order->get_date_created();
-                return $date_created ? $date_created->format('Y-m-d H:i:s') : '';
+            case 'product_name':
+                $product_names = array();
+                foreach ($order->get_items() as $item) {
+                    $product_names[] = $item->get_name();
+                }
+                return implode(', ', $product_names);
+                
                 
             case 'product_categories':
                 return $this->ugsiw_get_order_categories($order);
 
-            case 'coupon_used':
-                // Try WC_Order::get_used_coupons() first
-                if (method_exists($order, 'get_used_coupons')) {
-                    $coupons = $order->get_used_coupons();
-                    if (is_array($coupons) && !empty($coupons)) {
-                        return implode(', ', $coupons);
+            case 'coupon_used_amount':
+                // Collect coupon codes and amounts and return formatted string like "CODE (¤amount)"
+                $coupon_map = array(); // code => total discount amount
+
+                $currency = method_exists($order, 'get_currency') ? $order->get_currency() : '';
+                $currency_symbol = get_woocommerce_currency_symbol($currency);
+                $currency_symbol = html_entity_decode($currency_symbol, ENT_QUOTES, 'UTF-8');
+                $currency_symbol = str_replace("\xc2\xa0", ' ', $currency_symbol);
+                $decimals = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
+
+                foreach ($order->get_items('coupon') as $coupon_item) {
+                    $code = '';
+                    $amount = null;
+
+                    if (is_array($coupon_item)) {
+                        if (isset($coupon_item['code'])) {
+                            $code = $coupon_item['code'];
+                        }
+                        if (isset($coupon_item['discount'])) {
+                            $amount = $coupon_item['discount'];
+                        } elseif (isset($coupon_item['amount'])) {
+                            $amount = $coupon_item['amount'];
+                        } elseif (isset($coupon_item['discount_total'])) {
+                            $amount = $coupon_item['discount_total'];
+                        } elseif (isset($coupon_item['discount_amount'])) {
+                            $amount = $coupon_item['discount_amount'];
+                        }
+                    } elseif (is_object($coupon_item)) {
+                        if (method_exists($coupon_item, 'get_code')) {
+                            $code = $coupon_item->get_code();
+                        }
+                        if (method_exists($coupon_item, 'get_discount')) {
+                            $amount = $coupon_item->get_discount();
+                        } elseif (method_exists($coupon_item, 'get_amount')) {
+                            $amount = $coupon_item->get_amount();
+                        } elseif (method_exists($coupon_item, 'get_total')) {
+                            $amount = $coupon_item->get_total();
+                        } elseif (method_exists($coupon_item, 'get_meta')) {
+                            $m = $coupon_item->get_meta('discount');
+                            if ($m === null) {
+                                $m = $coupon_item->get_meta('amount');
+                            }
+                            if ($m !== null) {
+                                $amount = $m;
+                            }
+                        }
+                    }
+
+                    $code = is_string($code) ? trim($code) : '';
+                    if ($code === '') {
+                        continue;
+                    }
+
+                    $amount = is_numeric($amount) ? (float) $amount : null;
+
+                    if (!isset($coupon_map[$code])) {
+                        $coupon_map[$code] = 0;
+                    }
+                    if ($amount !== null) {
+                        $coupon_map[$code] += $amount;
                     }
                 }
 
-                // Fallback: inspect coupon items
                 $coupon_codes = array();
-                foreach ($order->get_items('coupon') as $coupon_item) {
-                    if (is_array($coupon_item) && isset($coupon_item['code'])) {
-                        $coupon_codes[] = $coupon_item['code'];
-                    } elseif (is_object($coupon_item) && method_exists($coupon_item, 'get_code')) {
-                        $coupon_codes[] = $coupon_item->get_code();
+
+                // Prefer the order's used coupons (keeps original order), but attach amounts if we have them
+                if (method_exists($order, 'get_used_coupons')) {
+                    $used = $order->get_used_coupons();
+                    if (is_array($used) && !empty($used)) {
+                        foreach ($used as $c) {
+                            $c = trim($c);
+                            if ($c === '') {
+                                continue;
+                            }
+                            if (isset($coupon_map[$c]) && $coupon_map[$c] !== 0) {
+                                $formatted = number_format((float) $coupon_map[$c], $decimals, '.', '');
+                                $coupon_codes[] = $c . ' (' . $currency_symbol . $formatted . ')';
+                            } else {
+                                $coupon_codes[] = $c;
+                            }
+                        }
+                        return implode(', ', $coupon_codes);
+                    }
+                }
+
+                // Fallback: use coupon_map keys and amounts
+                foreach ($coupon_map as $code => $amt) {
+                    if ($amt !== 0) {
+                        $formatted = number_format((float) $amt, $decimals, '.', '');
+                        $coupon_codes[] = $code . ' (' . $currency_symbol . $formatted . ')';
+                    } else {
+                        $coupon_codes[] = $code;
                     }
                 }
 
                 $coupon_codes = array_filter($coupon_codes, function($c) { return trim($c) !== ''; });
                 return !empty($coupon_codes) ? implode(', ', $coupon_codes) : '';
+
+            case 'total_discount':
+                // Compute total discount. Prefer explicit coupon item amounts, otherwise derive from
+                // item subtotals minus totals.
+                $total_discount = 0.0;
+                foreach ($order->get_items('coupon') as $coupon_item) {
+                    $amt = null;
+                    if (is_array($coupon_item)) {
+                        if (isset($coupon_item['discount'])) {
+                            $amt = $coupon_item['discount'];
+                        } elseif (isset($coupon_item['amount'])) {
+                            $amt = $coupon_item['amount'];
+                        } elseif (isset($coupon_item['discount_total'])) {
+                            $amt = $coupon_item['discount_total'];
+                        }
+                    } elseif (is_object($coupon_item)) {
+                        if (method_exists($coupon_item, 'get_discount')) {
+                            $amt = $coupon_item->get_discount();
+                        } elseif (method_exists($coupon_item, 'get_amount')) {
+                            $amt = $coupon_item->get_amount();
+                        } elseif (method_exists($coupon_item, 'get_total')) {
+                            $amt = $coupon_item->get_total();
+                        }
+                    }
+                    if (is_numeric($amt)) {
+                        $total_discount += (float) $amt;
+                    }
+                }
+
+                if ($total_discount == 0.0) {
+                    $subtotal_sum = 0.0;
+                    $total_sum = 0.0;
+                    foreach ($order->get_items() as $item) {
+                        if (is_object($item) && method_exists($item, 'get_subtotal')) {
+                            $subtotal_sum += (float) $item->get_subtotal();
+                        } else {
+                            $subtotal_sum += (float) $item->get_total();
+                        }
+                        $total_sum += (float) $item->get_total();
+                    }
+                    $calc = $subtotal_sum - $total_sum;
+                    if ($calc > 0) {
+                        $total_discount = $calc;
+                    }
+                }
+
+                $currency = method_exists($order, 'get_currency') ? $order->get_currency() : '';
+                $currency_symbol = get_woocommerce_currency_symbol($currency);
+                $currency_symbol = html_entity_decode($currency_symbol, ENT_QUOTES, 'UTF-8');
+                $currency_symbol = str_replace("\xc2\xa0", ' ', $currency_symbol);
+                $decimals = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
+
+                return $total_discount != 0.0 ? $currency_symbol . number_format((float) $total_discount, $decimals, '.', '') : '';
 
             case 'product_sku':
                 $skus = array();
@@ -859,8 +995,15 @@ class UGSIW_To_Google_Sheets {
                 $decimals = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
                 foreach ($order->get_items() as $item) {
                     $qty = max(1, (int) $item->get_quantity());
-                    $per_item_price = $qty ? ($item->get_total() / $qty) : $item->get_total();
-                    $formatted = number_format((float) $per_item_price, $decimals, '.', '');
+                    // Prefer the item's subtotal (price before per-item discounts) when available
+                    $unit_price = null;
+                    if (is_object($item) && method_exists($item, 'get_subtotal')) {
+                        $unit_price = $qty ? ($item->get_subtotal() / $qty) : $item->get_subtotal();
+                    }
+                    if ($unit_price === null) {
+                        $unit_price = $qty ? ($item->get_total() / $qty) : $item->get_total();
+                    }
+                    $formatted = number_format((float) $unit_price, $decimals, '.', '');
                     $prices[] = $currency_symbol . $formatted;
                 }
                 return !empty($prices) ? implode(', ', $prices) : '';
@@ -873,7 +1016,13 @@ class UGSIW_To_Google_Sheets {
                 $currency_symbol = str_replace("\xc2\xa0", ' ', $currency_symbol);
                 $decimals = function_exists('wc_get_price_decimals') ? wc_get_price_decimals() : 2;
                 foreach ($order->get_items() as $item) {
-                    $formatted = number_format((float) $item->get_total(), $decimals, '.', '');
+                    // Prefer the item's subtotal (total before discount) when available
+                    if (is_object($item) && method_exists($item, 'get_subtotal')) {
+                        $line_total = $item->get_subtotal();
+                    } else {
+                        $line_total = $item->get_total();
+                    }
+                    $formatted = number_format((float) $line_total, $decimals, '.', '');
                     $totals[] = $currency_symbol . $formatted;
                 }
                 return !empty($totals) ? implode(', ', $totals) : '';
@@ -922,6 +1071,11 @@ class UGSIW_To_Google_Sheets {
                     }
                 }
                 return !empty($shipping_entries) ? implode(', ', $shipping_entries) : '';
+            
+
+            case 'order_date':
+                $date_created = $order->get_date_created();
+                return $date_created ? $date_created->format('Y-m-d H:i:s') : '';
                 
             default:
                 return null;
