@@ -24,10 +24,10 @@ if ( ! defined('UGSIW_VERSION') ) {
 
 
 // Define plugin path and url
-define('UGSIW_WPMETHODS_PATH', plugin_dir_path(__FILE__));
-define('UGSIW_WPMETHODS_URL', plugin_dir_url(__FILE__));
+define('UGSIW_PATH', plugin_dir_path(__FILE__));
+define('UGSIW_URL', plugin_dir_url(__FILE__));
 // Include the autoloader
-require_once UGSIW_WPMETHODS_PATH . 'includes/file-autoloader.php';
+require_once UGSIW_PATH . 'includes/file-autoloader.php';
 
 // Initialize
 add_action('plugins_loaded', function() {

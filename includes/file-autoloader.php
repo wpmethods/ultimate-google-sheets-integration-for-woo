@@ -4,7 +4,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 spl_autoload_register(function($class) {
     $prefix = 'UGSIW\\';
-    $base_dir = UGSIW_WPMETHODS_PATH . 'includes/';
+    $base_dir = UGSIW_PATH . 'includes/';
     $len = strlen($prefix);
     if (strncmp($prefix, $class, $len) !== 0) {
         return;

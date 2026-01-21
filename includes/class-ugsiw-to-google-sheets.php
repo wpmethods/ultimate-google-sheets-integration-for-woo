@@ -13,6 +13,9 @@ class UGSIW_To_Google_Sheets {
     
     private $available_fields = array();
     private $is_pro_active = false;
+
+    /** @var UGSIW_Script_Generator */
+    private $script_generator;
     
     public function __construct() {
         // Define available fields
@@ -2065,42 +2068,42 @@ class UGSIW_To_Google_Sheets {
                 <div class="ugsiw-products-grid">
                     <!-- Product 1 -->
                     <div class="ugsiw-product-card">
-                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/Click-Shop-wordpress-theme.webp" alt="Click Shop - Ecommerce Wordpress Theme">
+                        <img src="<?php echo esc_url(UGSIW_URL); ?>assets/img/Click-Shop-wordpress-theme.webp" alt="Click Shop - Ecommerce Wordpress Theme">
                         <h4>Click Shop - Ecommerce Wordpress Theme</h4>
                         <a href="https://ugsiw.com/product/click-shop-wordpress-landing-page-type-ecommerce-theme/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                     
                     <!-- Product 2 -->
                     <div class="ugsiw-product-card">
-                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/bdexchanger-dollar-buy-sell-php-script-or-money-exchanger-ex.webp" alt="BDExchanger || PHP Script for Dollar Buy Sell">
+                        <img src="<?php echo esc_url(UGSIW_URL); ?>assets/img/bdexchanger-dollar-buy-sell-php-script-or-money-exchanger-ex.webp" alt="BDExchanger || PHP Script for Dollar Buy Sell">
                         <h4>BDExchanger || PHP Script for Dollar Buy Sell</h4>
                         <a href="https://ugsiw.com/product/bdexchanger-php-script-for-dollar-buy-sell-or-currency-exchanger/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                     
                     <!-- Product 3 -->
                     <div class="ugsiw-product-card">
-                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/Social-Chat-Floating-Icons-WordPress-Plugin.webp" alt="Social Chat Floating Icons Wordpress Plugin">
+                        <img src="<?php echo esc_url(UGSIW_URL); ?>assets/img/Social-Chat-Floating-Icons-WordPress-Plugin.webp" alt="Social Chat Floating Icons Wordpress Plugin">
                         <h4>Social Chat Floating Icons Wordpress Plugin</h4>
                         <a href="https://ugsiw.com/product/social-chat-floating-icons-wordpress-plugin/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                     
                     <!-- Product 4 -->
                     <div class="ugsiw-product-card">
-                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/How-to-Show-Recent-WooCommerce-Order-List-Table-with-Elementor-Addon-Orders-Frontend.webp" alt="WooCommerce Order List Table on eCommerce Website">
+                        <img src="<?php echo esc_url(UGSIW_URL); ?>assets/img/How-to-Show-Recent-WooCommerce-Order-List-Table-with-Elementor-Addon-Orders-Frontend.webp" alt="WooCommerce Order List Table on eCommerce Website">
                         <h4>WooCommerce Order List Table on eCommerce Website</h4>
                         <a href="https://ugsiw.com/product/woocommerce-order-list-table-on-ecommerce-website-elementor-addon/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
                     
                     <!-- Product 5 -->
                     <div class="ugsiw-product-card">
-                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/Book-Shop-Multi-Seller-banner.webp" alt="Multi-Vendor Book Selling Website Backup File">
+                        <img src="<?php echo esc_url(UGSIW_URL); ?>assets/img/Book-Shop-Multi-Seller-banner.webp" alt="Multi-Vendor Book Selling Website Backup File">
                         <h4>Multi-Vendor Book Selling Website Backup File</h4>
                         <a href="https://ugsiw.com/product/multi-vendor-book-selling-website-to-sell-pdf-hardcover-books/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
 
                     <!-- Product 6 -->
                     <div class="ugsiw-product-card">
-                        <img src="<?php echo esc_url(UGSIW_ugsiw_URL); ?>assets/img/single-product-landing-page-with-woocommerce-checkout-form-copy.webp" alt="Multi-Vendor Book Selling Website Backup File">
+                        <img src="<?php echo esc_url(UGSIW_URL); ?>assets/img/single-product-landing-page-with-woocommerce-checkout-form-copy.webp" alt="Multi-Vendor Book Selling Website Backup File">
                         <h4>Single Product Landing Page with WooCommerce</h4>
                         <a href="https://ugsiw.com/product/single-product-landing-page-with-woocommerce-checkout-order-form/" target="_blank" class="ugsiw-product-button">Get it</a>
                     </div>
