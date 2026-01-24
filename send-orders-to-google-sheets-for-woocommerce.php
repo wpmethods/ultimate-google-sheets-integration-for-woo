@@ -3,7 +3,7 @@
  * Plugin Name: Send Orders to Google Sheets for WooCommerce
  * Plugin URI: https://wpmethods.com/product/send-orders-to-google-sheets-for-woocommerce/
  * Description: Send order data to Google Sheets when order status changes to selected statuses
- * Version: 1.0.0
+ * Version: 1.0.1
  * Author: WP Methods
  * Author URI: https://wpmethods.com
  * License: GPL v2 or later
@@ -14,22 +14,33 @@
  * Requires PHP: 7.4
  */
 
-// Prevent direct access
+use YahnisElsts\PluginUpdateChecker\v5\PucFactory;
+
 if (!defined('ABSPATH')) {
     exit;
 }
-if ( ! defined('UGSIW_VERSION') ) {
-    define('UGSIW_VERSION', '1.0.0');
-}
 
-
-// Define plugin path and url
+define('UGSIW_VERSION', '1.0.1');
 define('UGSIW_PATH', plugin_dir_path(__FILE__));
 define('UGSIW_URL', plugin_dir_url(__FILE__));
-// Include the autoloader
+
+// Autoloader
 require_once UGSIW_PATH . 'includes/file-autoloader.php';
 
-// Initialize
-add_action('plugins_loaded', function() {
+// Load Plugin Update Checker
+require_once UGSIW_PATH . 'updates/plugin-update-checker.php';
+
+// Init plugin
+add_action('plugins_loaded', function () {
     new UGSIW\UGSIW_To_Google_Sheets();
 });
+
+// Build update checker
+$ugsiw_update_checker = PucFactory::buildUpdateChecker(
+    'https://github.com/wpmethods/send-orders-to-google-sheets-for-woocommerce/',
+    __FILE__,
+    'send-orders-to-google-sheets-for-woocommerce'
+);
+
+// Stable branch
+$ugsiw_update_checker->setBranch('main');
