@@ -4,7 +4,7 @@ Tags: google sheet woocommerce, integrate google sheet, google sheets, google sh
 Requires at least: 5.9
 Tested up to: 6.9
 Requires PHP: 7.4
-Stable tag: 1.0.1
+Stable tag: 1.0.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -73,6 +73,9 @@ No, You must install and active woocommerce plugin to make this plugin work.
 6. Auto Generate Google App Script
 
 == Changelog ==
-
+= 1.0.2 =
+* Fix some links
+= 1.0.1 =
+* Fix some minor bugs
 = 1.0.0 =
 * Plugin initial release
